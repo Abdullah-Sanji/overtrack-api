@@ -10,6 +10,8 @@ export default defineConfig({
     hookTimeout: 120_000,
     testTimeout: 30_000,
     fileParallelism: false,
+    globalSetup: ['test/setup/global-setup.ts'],
+    setupFiles: ['test/setup/env.ts'],
     alias: { '@': path.resolve(__dirname, 'src') },
   },
   plugins: [swc.vite({ jsc: { transform: { legacyDecorator: true, decoratorMetadata: true } } })],

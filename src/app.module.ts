@@ -3,11 +3,13 @@ import { ConfigModule } from '@nestjs/config';
 import { APP_PIPE } from '@nestjs/core';
 import { ZodValidationPipe } from 'nestjs-zod';
 import { validateEnv } from './common/config/env';
+import { DatabaseModule } from './database/database.module';
 import { HealthModule } from './health/health.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true, validate: validateEnv, envFilePath: ['.env'] }),
+    DatabaseModule,
     HealthModule,
   ],
   providers: [{ provide: APP_PIPE, useClass: ZodValidationPipe }],
