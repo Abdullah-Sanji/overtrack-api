@@ -5109,7 +5109,6 @@ export async function seed(app: INestApplicationContext): Promise<void> {
     if (slug === 'platform') {
       for (const a of [tl, dm, cto]) await step(actorOf(a), s3, { type: 'approve' });
     } else {
-      await step(actorOf(tl), s1, { type: 'submit', chain: [] }).catch(() => undefined); // s1 is emp1's; owner must submit
       await step(actorOf(emps[0]), s1, { type: 'submit', chain: [] });
       await step(actorOf(tl), s1, { type: 'reject', reason: 'Please link the incident tickets' });
       for (const a of [tl, dm, cto]) await step(actorOf(a), s2, { type: 'approve' });
@@ -5123,7 +5122,7 @@ if (require.main === module) {
   NestFactory.createApplicationContext(AppModule).then(async (ctx) => { await seed(ctx); await ctx.close(); console.log('seeded'); });
 }
 ```
-Remove the `.catch(() => undefined)` line and its comment before committing; it was a reminder that only the owner can submit. The resulting statuses per team: platform → draft, submitted, approved; mobile → rejected, paid, submitted (at CTO).
+The resulting statuses per team: platform → draft, submitted, approved; mobile → rejected, paid, submitted (at CTO).
 
 - [ ] **Step 4: Run tests** → PASS. Then run `pnpm seed` against the dev database (`docker compose up -d`, `pnpm db:migrate`, `pnpm seed`) and log in via Swagger with `admin@overtrack.local`.
 
