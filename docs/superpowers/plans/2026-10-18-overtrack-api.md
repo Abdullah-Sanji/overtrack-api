@@ -4868,10 +4868,10 @@ describe('ExportService', () => {
     const wb = new ExcelJS.Workbook(); await wb.xlsx.load(buf as unknown as ArrayBuffer);
     const summary = wb.getWorksheet('Summary')!; const details = wb.getWorksheet('Details')!;
     expect(summary.getRow(1).values).toEqual([undefined, 'Employee code', 'Employee', 'Team', 'Period', 'Weekday (h)', 'Weekend (h)', 'Total hours', 'Weighted hours', 'Status', 'Submitted at', 'Approved at', 'Paid at', 'Payment reference']);
-    expect(summary.getRow(2).getCell(2).value).toBe('Ann Lee'); expect(summary.getRow(2).getCell(9).value).toBe(11);
-    expect(summary.getRow(3).getCell(10).value).toBe('no sheet');
+    expect(summary.getRow(2).getCell(2).value).toBe('Ann Lee'); expect(summary.getRow(2).getCell(8).value).toBe(11);
+    expect(summary.getRow(3).getCell(9).value).toBe('no sheet');
     expect(details.rowCount).toBe(3);
-    expect(details.getRow(3).getCell(11).value).toBe('PROJ-2'); expect(details.getRow(3).getCell(14).value).toBe('Max Po');
+    expect(details.getRow(3).getCell(12).value).toBe('PROJ-2'); expect(details.getRow(3).getCell(15).value).toBe('Max Po');
   });
   it('builds csv with the Details layout', () => {
     const csv = svc.toCsv([report]);
