@@ -40,6 +40,14 @@ export class UsersService {
     return paged(rows.map(toPublicUser), Number(total), p);
   }
 
+  async directory(search?: string) {
+    const where: SQL[] = [eq(users.isActive, true)];
+    if (search) where.push(or(ilike(users.firstName, `%${search}%`), ilike(users.lastName, `%${search}%`))!);
+    return this.drizzle.db
+      .select({ id: users.id, firstName: users.firstName, lastName: users.lastName, teamId: users.teamId, role: users.role })
+      .from(users).where(and(...where)).orderBy(asc(users.lastName), asc(users.firstName)).limit(200);
+  }
+
   async create(actorId: string, dto: CreateUserDto): Promise<PublicUser> {
     const email = dto.email.toLowerCase();
     let u: typeof users.$inferSelect;

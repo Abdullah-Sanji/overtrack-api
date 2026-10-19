@@ -95,4 +95,33 @@ describe('users', () => {
     expect(res.statusCode).toBe(404);
     expect(res.json().code).toBe('NOT_FOUND');
   });
+
+  describe('directory', () => {
+    it('employee gets name-only list of active users; admin is not shadowed by :id', async () => {
+      const emp = await createUser(db, { firstName: 'Emp', lastName: 'Zed' });
+      const mgr = await createUser(db, { firstName: 'Mia', lastName: 'Boss', role: 'delivery_manager' });
+      const gone = await createUser(db, { firstName: 'Gone', lastName: 'Away', isActive: false });
+      const empToken = (await login(app, emp.email, emp.password)).accessToken;
+      const res = await app.inject({ method: 'GET', url: '/api/v1/users/directory', headers: bearer(empToken) });
+      expect(res.statusCode).toBe(200);
+      const data = res.json().data as Array<Record<string, unknown>>;
+      expect(data.map((u) => u.id).sort()).toEqual([admin.id, emp.id, mgr.id].sort());
+      expect(data.map((u) => u.id)).not.toContain(gone.id);
+      for (const u of data) expect(Object.keys(u).sort()).toEqual(['firstName', 'id', 'lastName', 'role', 'teamId']);
+      expect(data.find((u) => u.id === mgr.id)).toMatchObject({ firstName: 'Mia', lastName: 'Boss', role: 'delivery_manager', teamId: null });
+      const adminRes = await app.inject({ method: 'GET', url: '/api/v1/users/directory', headers: bearer(adminToken) });
+      expect(adminRes.statusCode).toBe(200);
+      expect(adminRes.json().data).toHaveLength(3);
+    });
+
+    it('filters by search on first or last name', async () => {
+      const emp = await createUser(db);
+      await createUser(db, { firstName: 'Mia', lastName: 'Boss' });
+      await createUser(db, { firstName: 'Bob', lastName: 'Miller' });
+      const empToken = (await login(app, emp.email, emp.password)).accessToken;
+      const res = await app.inject({ method: 'GET', url: '/api/v1/users/directory?search=mi', headers: bearer(empToken) });
+      expect(res.statusCode).toBe(200);
+      expect(res.json().data.map((u: { lastName: string }) => u.lastName)).toEqual(['Boss', 'Miller']);
+    });
+  });
 });
