@@ -1,14 +1,12 @@
-import { Body, Controller, Get, HttpCode, Post, Req, Res } from '@nestjs/common';
+import { Body, Controller, HttpCode, Post, Req, Res } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { Public } from '@/common/auth/public.decorator';
-import { CurrentUser } from '@/common/auth/current-user.decorator';
-import { AuthUser } from '@/common/auth/auth-user';
 import { Env } from '@/common/config/env';
 import { DomainError } from '@/common/errors/domain-error';
 import { AuthService } from './auth.service';
 import { TokenService } from './token.service';
-import { AcceptInviteDto, ForgotPasswordDto, LoginDto, ResetPasswordDto } from './auth.dto';
+import { AcceptInviteDto, LoginDto, ResetPasswordDto } from './auth.dto';
 
 export const REFRESH_COOKIE = 'ot_refresh';
 
@@ -48,11 +46,4 @@ export class AuthController {
 
   @Public() @Post('auth/reset-password') @HttpCode(204)
   async reset(@Body() dto: ResetPasswordDto) { await this.auth.setPasswordByToken(dto.token, 'reset', dto.password); }
-
-  // forgot-password is wired in Task 5 once MailService exists; keep the signature stable.
-  @Public() @Post('auth/forgot-password') @HttpCode(204)
-  async forgot(@Body() _dto: ForgotPasswordDto) { return; }
-
-  @Get('me')
-  async me(@CurrentUser() user: AuthUser) { return { data: await this.auth.me(user.id) }; }
 }

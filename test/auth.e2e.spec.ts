@@ -74,8 +74,7 @@ describe('auth', () => {
     expect((await attempt()).statusCode).toBe(429);
   });
 
-  // Un-skip in Task 5 once GET /users exists.
-  it.skip('enforces @Roles on admin routes', async () => {
+  it('enforces @Roles on admin routes', async () => {
     const u = await createUser(db, { role: 'employee' });
     const { accessToken } = await login(app, u.email, u.password);
     const res = await app.inject({ method: 'GET', url: '/api/v1/users', headers: bearer(accessToken) });
