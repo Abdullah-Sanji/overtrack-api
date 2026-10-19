@@ -4,6 +4,8 @@ import { formatInTimeZone } from 'date-fns-tz';
 import { createTestApp, login, bearer } from './helpers/app';
 import { truncateAll } from './helpers/db';
 import { createUser, createTeam, createOvertimeType } from './helpers/factories';
+import { eq } from 'drizzle-orm';
+import { overtimeTypes, sheetApprovalSteps, sheets, teams } from '@/database/schema';
 import { DrizzleService } from '@/database/drizzle.service';
 
 const today = formatInTimeZone(new Date(), 'UTC', 'yyyy-MM-dd');
@@ -101,5 +103,58 @@ describe('sheets and entries', () => {
     await app.inject({ method: 'POST', url: '/api/v1/sheets/for-period', headers: bearer(ot), payload: { period: '2026-02' } });
     const res = await app.inject({ method: 'GET', url: '/api/v1/sheets', headers: bearer(token) });
     expect(res.json().data.map((s: { period: string }) => s.period)).toEqual(['2026-03', '2026-01']);
+  });
+
+  const post = (id: string, payload: unknown, t = token) => app.inject({ method: 'POST', url: `/api/v1/sheets/${id}/entries`, headers: bearer(t), payload: payload as object });
+  const listIds = async (t: string, qs = '') => (await app.inject({ method: 'GET', url: `/api/v1/sheets${qs}`, headers: bearer(t) })).json().data.map((x: { id: string }) => x.id) as string[];
+
+  it('rejects derived hours above 16 when hours is omitted', async () => {
+    const s = await sheetFor();
+    const r = await post(s.id, entry({ startTime: '00:00', endTime: '23:45' }));
+    expect(r.statusCode).toBe(400); expect(r.json().code).toBe('VALIDATION_FAILED');
+    expect(JSON.stringify(r.json())).toContain('hours');
+  });
+
+  it('blocks entries on a non-editable sheet', async () => {
+    const s = await sheetFor();
+    await db.update(sheets).set({ status: 'submitted' }).where(eq(sheets.id, s.id));
+    const r = await post(s.id, entry());
+    expect(r.statusCode).toBe(409); expect(r.json().code).toBe('SHEET_NOT_EDITABLE');
+  });
+
+  it('rejects an inactive overtime type', async () => {
+    const t = await createOvertimeType(db);
+    await db.update(overtimeTypes).set({ isActive: false }).where(eq(overtimeTypes.id, t.id));
+    const s = await sheetFor();
+    expect((await post(s.id, entry({ overtimeTypeId: t.id }))).statusCode).toBe(404);
+  });
+
+  it('foreign employeeId filter returns empty for users with no visibility', async () => {
+    await sheetFor();
+    const other = await createUser(db); const ot = (await login(app, other.email, other.password)).accessToken;
+    const res = await app.inject({ method: 'GET', url: `/api/v1/sheets?employeeId=${emp.id}`, headers: bearer(ot) });
+    expect(res.statusCode).toBe(200); expect(res.json().data).toEqual([]);
+  });
+
+  it('tech lead and finance see team sheets', async () => {
+    const s = await sheetFor();
+    const lead = await createUser(db); await db.update(teams).set({ techLeadId: lead.id }).where(eq(teams.id, team.id));
+    const lt = (await login(app, lead.email, lead.password)).accessToken;
+    expect(await listIds(lt)).toContain(s.id);
+    expect((await app.inject({ method: 'GET', url: `/api/v1/sheets/${s.id}`, headers: bearer(lt) })).statusCode).toBe(200);
+    const fin = await createUser(db, { role: 'finance' }); const ft = (await login(app, fin.email, fin.password)).accessToken;
+    expect(await listIds(ft)).toContain(s.id);
+    expect((await app.inject({ method: 'GET', url: `/api/v1/sheets/${s.id}`, headers: bearer(ft) })).statusCode).toBe(200);
+  });
+
+  it('list includes sheets whose snapshot steps name the caller', async () => {
+    const s = await sheetFor();
+    const approver = await createUser(db); const unrelated = await createUser(db);
+    await db.insert(sheetApprovalSteps).values({ sheetId: s.id, round: 1, position: 1, label: 'Lead', approverId: approver.id });
+    const at = (await login(app, approver.email, approver.password)).accessToken;
+    const ut = (await login(app, unrelated.email, unrelated.password)).accessToken;
+    expect(await listIds(at)).toContain(s.id);
+    expect(await listIds(at, `?employeeId=${emp.id}`)).toContain(s.id);
+    expect(await listIds(ut)).not.toContain(s.id);
   });
 });

@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { alias } from 'drizzle-orm/pg-core';
-import { and, asc, count, desc, eq, inArray, or, SQL, sum } from 'drizzle-orm';
+import { and, asc, count, desc, eq, exists, inArray, or, SQL, sum } from 'drizzle-orm';
 import { DrizzleService, DbOrTx, Tx } from '@/database/drizzle.service';
 import { attachments, overtimeTypes, sheetApprovalSteps, sheetEntries, sheets, teams, users } from '@/database/schema';
 import { AuthUser } from '@/common/auth/auth-user';
@@ -119,14 +119,12 @@ export class SheetsService {
       if (q.employeeId) where.push(eq(sheets.employeeId, q.employeeId));
     } else {
       const own = eq(sheets.employeeId, actor.id);
-      if (q.employeeId && q.employeeId !== actor.id) {
-        if (visible.length === 0) throw forbidden();
-        where.push(and(eq(sheets.employeeId, q.employeeId), inArray(users.teamId, visible))!);
-      } else if (!q.employeeId && visible.length > 0) {
-        where.push(or(own, inArray(users.teamId, visible))!);
-      } else {
-        where.push(own);
-      }
+      const named = exists(this.drizzle.db.select({ one: sheetApprovalSteps.id }).from(sheetApprovalSteps)
+        .where(and(eq(sheetApprovalSteps.sheetId, sheets.id), or(eq(sheetApprovalSteps.approverId, actor.id), eq(sheetApprovalSteps.backupApproverId, actor.id)))));
+      const seen = visible.length > 0 ? or(inArray(users.teamId, visible), named)! : named;
+      if (q.employeeId && q.employeeId !== actor.id) where.push(and(eq(sheets.employeeId, q.employeeId), seen)!);
+      else if (!q.employeeId) where.push(or(own, seen)!);
+      else where.push(own);
     }
     if (q.teamId) where.push(eq(users.teamId, q.teamId));
     if (q.period) where.push(eq(sheets.period, periodToDate(q.period)));

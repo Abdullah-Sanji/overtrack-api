@@ -1,14 +1,14 @@
 import { Injectable } from '@nestjs/common';
 import { and, eq, gt, lt, ne } from 'drizzle-orm';
 import { formatInTimeZone } from 'date-fns-tz';
-import { DrizzleService, DbOrTx } from '@/database/drizzle.service';
+import { DrizzleService, DbOrTx, Tx } from '@/database/drizzle.service';
 import { sheetEntries, users } from '@/database/schema';
 import { AuthUser } from '@/common/auth/auth-user';
 import { DomainError, forbidden, notFound } from '@/common/errors/domain-error';
 import { OvertimeTypesService } from '@/overtime-types/overtime-types.service';
 import { SheetsService } from './sheets.service';
 import { CreateEntryDto, UpdateEntryDto } from './sheets.dto';
-import { hoursBetween, weighted } from './hours';
+import { hoursBetween, isQuarterStep, weighted } from './hours';
 
 const EDITABLE = new Set(['draft', 'rejected']);
 
@@ -16,7 +16,13 @@ const EDITABLE = new Set(['draft', 'rejected']);
 export class EntriesService {
   constructor(private readonly drizzle: DrizzleService, private readonly sheets: SheetsService, private readonly types: OvertimeTypesService) {}
 
-  private async editableSheet(tx: DbOrTx, actor: AuthUser, sheetId: string) {
+  private assertHoursRange(hours: number) {
+    const msg = 'Hours must be between 0.25 and 16 in 0.25 steps';
+    if (hours < 0.25 || hours > 16 || !isQuarterStep(hours)) throw new DomainError('VALIDATION_FAILED', msg, 400, [{ path: 'hours', message: msg }]);
+  }
+
+  private async editableSheet(tx: Tx, actor: AuthUser, sheetId: string) {
+    await this.sheets.lockForUpdate(tx, sheetId);
     const r = await this.sheets.findRaw(sheetId, tx);
     if (r.sheet.employeeId !== actor.id) throw forbidden('Only the sheet owner can edit entries');
     if (!EDITABLE.has(r.sheet.status)) throw new DomainError('SHEET_NOT_EDITABLE', `Sheet is ${r.sheet.status} and cannot be edited`, 409);
@@ -44,6 +50,7 @@ export class EntriesService {
       await this.assertNoOverlap(tx, sheetId, dto.date, dto.startTime, dto.endTime);
       const type = await this.types.findActiveById(dto.overtimeTypeId, tx);
       const hours = dto.hours ?? hoursBetween(dto.startTime, dto.endTime);
+      this.assertHoursRange(hours);
       const [row] = await tx.insert(sheetEntries).values({
         sheetId, date: dto.date, startTime: dto.startTime, endTime: dto.endTime, hours: hours.toFixed(2), overtimeTypeId: type.id,
         multiplierSnapshot: type.multiplier.toFixed(2), weightedHours: weighted(hours, type.multiplier).toFixed(2),
@@ -67,6 +74,7 @@ export class EntriesService {
       const type = dto.overtimeTypeId ? await this.types.findActiveById(dto.overtimeTypeId, tx) : { id: cur.overtimeTypeId, multiplier: Number(cur.multiplierSnapshot) };
       const timesChanged = dto.startTime !== undefined || dto.endTime !== undefined;
       const hours = dto.hours ?? (timesChanged ? hoursBetween(start, end) : Number(cur.hours));
+      this.assertHoursRange(hours);
       await tx.update(sheetEntries).set({
         date, startTime: start, endTime: end, hours: hours.toFixed(2), overtimeTypeId: type.id, multiplierSnapshot: type.multiplier.toFixed(2),
         weightedHours: weighted(hours, type.multiplier).toFixed(2),
