@@ -3,6 +3,7 @@ import { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { createTestApp, login, bearer } from './helpers/app';
 import { truncateAll } from './helpers/db';
 import { createUser, createTeam, createOvertimeType, createSheet, createEntry, submittedSheet } from './helpers/factories';
+import { settings } from '@/database/schema';
 import { DrizzleService } from '@/database/drizzle.service';
 import { MailService } from '@/mail/mail.service';
 import { ReminderService } from '@/notifications/reminder.service';
@@ -57,6 +58,7 @@ describe('notifications', () => {
   });
 
   it('monthly reminder targets employees with a non-empty draft for the previous month', async () => {
+    await db.insert(settings).values({ id: 1, defaultTimezone: 'UTC', reminderDayOfMonth: 1 });
     const team = await createTeam(db); const type = await createOvertimeType(db);
     const withDraft = await createUser(db, { teamId: team.id }); const sheet = await createSheet(db, withDraft.id, '2026-09'); await createEntry(db, sheet.id, type.id);
     const emptyDraft = await createUser(db, { teamId: team.id }); await createSheet(db, emptyDraft.id, '2026-09');
@@ -66,5 +68,17 @@ describe('notifications', () => {
     mail.sent.length = 0;
     await app.get(ReminderService).runMonthlyReminder(new Date('2026-10-02T08:00:00Z'));
     expect(mail.sent).toHaveLength(0); // not the reminder day
+  });
+  it('reminder is idempotent and only fires at 08:00 in the configured timezone', async () => {
+    await db.insert(settings).values({ id: 1, defaultTimezone: 'UTC', reminderDayOfMonth: 1 });
+    const team = await createTeam(db); const type = await createOvertimeType(db);
+    const u = await createUser(db, { teamId: team.id }); const sheet = await createSheet(db, u.id, '2026-09'); await createEntry(db, sheet.id, type.id);
+    const r = app.get(ReminderService);
+    await r.runMonthlyReminder(new Date('2026-10-01T09:00:00Z'));
+    expect(mail.sent).toHaveLength(0); // wrong hour
+    await r.runMonthlyReminder(new Date('2026-10-01T08:00:00Z'));
+    await r.runMonthlyReminder(new Date('2026-10-01T08:00:00Z'));
+    expect(mail.sent).toHaveLength(1);
+    expect((await list(await tok(u))).data).toHaveLength(1);
   });
 });
