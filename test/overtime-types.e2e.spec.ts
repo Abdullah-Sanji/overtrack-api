@@ -51,4 +51,12 @@ describe('overtime types', () => {
     const forb = await app.inject({ method: 'POST', url: '/api/v1/overtime-types', headers: bearer(empToken), payload: { name: 'X', multiplier: 1 } });
     expect(forb.statusCode).toBe(403);
   });
+
+  it('rejects renaming a type to an existing name with 409', async () => {
+    await app.inject({ method: 'POST', url: '/api/v1/overtime-types', headers: bearer(adminToken), payload: { name: 'Weekend', multiplier: 2 } });
+    const other = await app.inject({ method: 'POST', url: '/api/v1/overtime-types', headers: bearer(adminToken), payload: { name: 'Night', multiplier: 2 } });
+    const res = await app.inject({ method: 'PATCH', url: `/api/v1/overtime-types/${other.json().data.id}`, headers: bearer(adminToken), payload: { name: 'Weekend' } });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().code).toBe('CONFLICT');
+  });
 });

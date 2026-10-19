@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { createTestApp, login, bearer } from './helpers/app';
@@ -81,5 +82,12 @@ describe('users', () => {
     expect(bad.json().code).toBe('INVALID_CREDENTIALS');
     const ok = await app.inject({ method: 'POST', url: '/api/v1/me/change-password', headers: bearer(accessToken), payload: { currentPassword: u.password, newPassword: 'FreshPass1234' } });
     expect(ok.statusCode).toBe(204);
+  });
+
+  it('returns 404 NOT_FOUND when the team does not exist', async () => {
+    const res = await app.inject({ method: 'POST', url: '/api/v1/users', headers: bearer(adminToken),
+      payload: { firstName: 'Lost', lastName: 'T', email: 'lost@t.local', role: 'employee', teamId: randomUUID() } });
+    expect(res.statusCode).toBe(404);
+    expect(res.json().code).toBe('NOT_FOUND');
   });
 });

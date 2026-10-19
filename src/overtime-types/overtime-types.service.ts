@@ -2,7 +2,9 @@ import { Injectable } from '@nestjs/common';
 import { and, asc, count, eq } from 'drizzle-orm';
 import { DrizzleService, DbOrTx } from '@/database/drizzle.service';
 import { overtimeTypes } from '@/database/schema';
-import { notFound } from '@/common/errors/domain-error';
+import { AuditService } from '@/audit/audit.service';
+import { DomainError, notFound } from '@/common/errors/domain-error';
+import { uniqueViolationConstraint } from '@/common/errors/pg';
 import { CreateOvertimeTypeDto, UpdateOvertimeTypeDto } from './overtime-types.dto';
 
 export interface OvertimeType { id: string; name: string; multiplier: number; color: string; sortOrder: number; isActive: boolean }
@@ -17,7 +19,7 @@ export const DEFAULT_OVERTIME_TYPES = [
 
 @Injectable()
 export class OvertimeTypesService {
-  constructor(private readonly drizzle: DrizzleService) {}
+  constructor(private readonly drizzle: DrizzleService, private readonly audit: AuditService) {}
 
   async list(includeInactive = false): Promise<OvertimeType[]> {
     const rows = await this.drizzle.db.select().from(overtimeTypes).where(includeInactive ? undefined : eq(overtimeTypes.isActive, true)).orderBy(asc(overtimeTypes.sortOrder), asc(overtimeTypes.name));
@@ -30,16 +32,38 @@ export class OvertimeTypesService {
     return toType(r);
   }
 
-  async create(dto: CreateOvertimeTypeDto): Promise<OvertimeType> {
-    const [r] = await this.drizzle.db.insert(overtimeTypes).values({ ...dto, multiplier: dto.multiplier.toFixed(2) }).returning();
-    return toType(r);
+  async create(actorId: string, dto: CreateOvertimeTypeDto): Promise<OvertimeType> {
+    try {
+      return await this.drizzle.db.transaction(async (tx) => {
+        const [r] = await tx.insert(overtimeTypes).values({ ...dto, multiplier: dto.multiplier.toFixed(2) }).returning();
+        const after = toType(r);
+        await this.audit.record(tx, { actorId, action: 'overtime_type.created', entityType: 'overtime_type', entityId: r.id, after });
+        return after;
+      });
+    } catch (err) {
+      throw this.mapDbError(err);
+    }
   }
 
-  async update(id: string, dto: UpdateOvertimeTypeDto): Promise<OvertimeType> {
+  async update(actorId: string, id: string, dto: UpdateOvertimeTypeDto): Promise<OvertimeType> {
     const { multiplier, ...rest } = dto;
-    const [r] = await this.drizzle.db.update(overtimeTypes).set({ ...rest, ...(multiplier !== undefined ? { multiplier: multiplier.toFixed(2) } : {}), updatedAt: new Date() }).where(eq(overtimeTypes.id, id)).returning();
-    if (!r) throw notFound('Overtime type');
-    return toType(r);
+    try {
+      return await this.drizzle.db.transaction(async (tx) => {
+        const [prev] = await tx.select().from(overtimeTypes).where(eq(overtimeTypes.id, id));
+        if (!prev) throw notFound('Overtime type');
+        const [r] = await tx.update(overtimeTypes).set({ ...rest, ...(multiplier !== undefined ? { multiplier: multiplier.toFixed(2) } : {}), updatedAt: new Date() }).where(eq(overtimeTypes.id, id)).returning();
+        const after = toType(r);
+        await this.audit.record(tx, { actorId, action: 'overtime_type.updated', entityType: 'overtime_type', entityId: id, before: toType(prev), after });
+        return after;
+      });
+    } catch (err) {
+      throw this.mapDbError(err);
+    }
+  }
+
+  private mapDbError(err: unknown): unknown {
+    if (uniqueViolationConstraint(err) === 'overtime_types_name_unique') return new DomainError('CONFLICT', 'Overtime type name already exists', 409);
+    return err;
   }
 
   async ensureDefaults(): Promise<void> {

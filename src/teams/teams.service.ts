@@ -1,7 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { and, asc, count, eq, ilike, SQL, sql } from 'drizzle-orm';
-import { DrizzleService } from '@/database/drizzle.service';
+import { DrizzleService, DbOrTx } from '@/database/drizzle.service';
 import { approvalChainSteps, teams, users } from '@/database/schema';
+import { AuditService } from '@/audit/audit.service';
 import { DomainError, notFound } from '@/common/errors/domain-error';
 import { foreignKeyViolationConstraint, uniqueViolationConstraint } from '@/common/errors/pg';
 import { paged, parsePagination } from '@/common/pagination';
@@ -21,10 +22,10 @@ interface TeamSummaryRow {
 
 @Injectable()
 export class TeamsService {
-  constructor(private readonly drizzle: DrizzleService) {}
+  constructor(private readonly drizzle: DrizzleService, private readonly audit: AuditService) {}
 
-  private summaryQuery() {
-    return this.drizzle.db
+  private summaryQuery(db: DbOrTx = this.drizzle.db) {
+    return db
       .select({
         id: teams.id, name: teams.name, description: teams.description, isActive: teams.isActive, createdAt: teams.createdAt, updatedAt: teams.updatedAt,
         techLeadId: users.id, techLeadFirst: users.firstName, techLeadLast: users.lastName,
@@ -40,8 +41,8 @@ export class TeamsService {
     return { ...rest, techLead: techLeadId && techLeadFirst !== null && techLeadLast !== null ? { id: techLeadId, firstName: techLeadFirst, lastName: techLeadLast } : null };
   }
 
-  async findById(id: string): Promise<TeamSummary> {
-    const [r] = await this.summaryQuery().where(eq(teams.id, id));
+  async findById(id: string, db: DbOrTx = this.drizzle.db): Promise<TeamSummary> {
+    const [r] = await this.summaryQuery(db).where(eq(teams.id, id));
     if (!r) throw notFound('Team');
     return this.toSummary(r);
   }
@@ -59,20 +60,28 @@ export class TeamsService {
     return paged(rows.map((r) => this.toSummary(r)), Number(total), p);
   }
 
-  async create(dto: CreateTeamDto): Promise<TeamSummary> {
+  async create(actorId: string, dto: CreateTeamDto): Promise<TeamSummary> {
     try {
-      const [t] = await this.drizzle.db.insert(teams).values(dto).returning({ id: teams.id });
-      return this.findById(t.id);
+      return await this.drizzle.db.transaction(async (tx) => {
+        const [t] = await tx.insert(teams).values(dto).returning({ id: teams.id });
+        const after = await this.findById(t.id, tx);
+        await this.audit.record(tx, { actorId, action: 'team.created', entityType: 'team', entityId: t.id, after });
+        return after;
+      });
     } catch (err) {
       throw this.mapDbError(err);
     }
   }
 
-  async update(id: string, dto: UpdateTeamDto): Promise<TeamSummary> {
+  async update(actorId: string, id: string, dto: UpdateTeamDto): Promise<TeamSummary> {
     try {
-      const [t] = await this.drizzle.db.update(teams).set({ ...dto, updatedAt: new Date() }).where(eq(teams.id, id)).returning({ id: teams.id });
-      if (!t) throw notFound('Team');
-      return this.findById(t.id);
+      return await this.drizzle.db.transaction(async (tx) => {
+        const before = await this.findById(id, tx);
+        await tx.update(teams).set({ ...dto, updatedAt: new Date() }).where(eq(teams.id, id));
+        const after = await this.findById(id, tx);
+        await this.audit.record(tx, { actorId, action: 'team.updated', entityType: 'team', entityId: id, before, after });
+        return after;
+      });
     } catch (err) {
       throw this.mapDbError(err);
     }
