@@ -4,7 +4,7 @@ NestJS (Fastify) + Drizzle + PostgreSQL backend for overtime management.
 
 ## Run locally
 ```
-docker compose up -d          # postgres + mailhog (http://localhost:8025)
+docker compose up -d          # postgres + mailpit (mail UI at http://localhost:8025)
 cp .env.example .env
 pnpm install && pnpm db:migrate && pnpm seed
 pnpm start:dev                # http://localhost:3000/docs
