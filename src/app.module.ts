@@ -12,6 +12,7 @@ import { DatabaseModule } from './database/database.module';
 import { HealthModule } from './health/health.module';
 import { MailModule } from './mail/mail.module';
 import { OvertimeTypesModule } from './overtime-types/overtime-types.module';
+import { SheetsModule } from './sheets/sheets.module';
 import { TeamsModule } from './teams/teams.module';
 import { UsersModule } from './users/users.module';
 
@@ -25,6 +26,7 @@ import { UsersModule } from './users/users.module';
     UsersModule,
     TeamsModule,
     OvertimeTypesModule,
+    SheetsModule,
     HealthModule,
   ],
   providers: [
