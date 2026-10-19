@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_FILTER, APP_GUARD, APP_PIPE } from '@nestjs/core';
 import { ZodValidationPipe } from 'nestjs-zod';
+import { AttachmentsModule } from './attachments/attachments.module';
 import { AuditModule } from './audit/audit.module';
 import { AuthModule } from './auth/auth.module';
 import { JwtAuthGuard } from './common/auth/jwt-auth.guard';
@@ -27,6 +28,7 @@ import { UsersModule } from './users/users.module';
     TeamsModule,
     OvertimeTypesModule,
     SheetsModule,
+    AttachmentsModule,
     HealthModule,
   ],
   providers: [

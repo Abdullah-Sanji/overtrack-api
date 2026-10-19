@@ -6,6 +6,7 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { cleanupOpenApiDoc } from 'nestjs-zod';
 import helmet from '@fastify/helmet';
 import cookie from '@fastify/cookie';
+import multipart from '@fastify/multipart';
 import rateLimit from '@fastify/rate-limit';
 import { AppModule } from './app.module';
 import { Env } from './common/config/env';
@@ -25,6 +26,7 @@ export async function configureApp(app: NestFastifyApplication): Promise<void> {
   app.setGlobalPrefix('api/v1');
   await app.register(helmet, { contentSecurityPolicy: false });
   await app.register(cookie);
+  await app.register(multipart, { limits: { fileSize: 5 * 1024 * 1024, files: 1 } });
   app.enableCors({ origin: config.get('CORS_ORIGIN').split(','), credentials: true });
 
   if (config.get('NODE_ENV') !== 'production') {
