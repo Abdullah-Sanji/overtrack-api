@@ -10,7 +10,7 @@
     "test:watch": "vitest",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx src/database/migrate.ts",
-    "seed": "tsx src/database/seed.ts"
+    "seed": "nest build && node dist/src/database/seed.js"
   },
   "devEngines": {
     "packageManager": {
