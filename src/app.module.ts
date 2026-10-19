@@ -10,6 +10,7 @@ import { HttpExceptionFilter } from './common/errors/http-exception.filter';
 import { DatabaseModule } from './database/database.module';
 import { HealthModule } from './health/health.module';
 import { MailModule } from './mail/mail.module';
+import { OvertimeTypesModule } from './overtime-types/overtime-types.module';
 import { TeamsModule } from './teams/teams.module';
 import { UsersModule } from './users/users.module';
 
@@ -21,6 +22,7 @@ import { UsersModule } from './users/users.module';
     AuthModule,
     UsersModule,
     TeamsModule,
+    OvertimeTypesModule,
     HealthModule,
   ],
   providers: [
