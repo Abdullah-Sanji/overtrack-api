@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { and, eq, isNull } from 'drizzle-orm';
-import { DrizzleService } from '@/database/drizzle.service';
+import { DbOrTx, DrizzleService } from '@/database/drizzle.service';
 import { refreshTokens, passwordTokens, users } from '@/database/schema';
 import { Env } from '@/common/config/env';
 import { DomainError } from '@/common/errors/domain-error';
@@ -18,11 +18,11 @@ export class TokenService {
     return this.jwt.signAsync({ sub: user.id, role: user.role, teamId: user.teamId }, { expiresIn: this.config.get('JWT_ACCESS_TTL_SECONDS') });
   }
 
-  async createRefreshToken(userId: string, familyId: string = randomUUID()): Promise<{ raw: string; expiresAt: Date }> {
+  async createRefreshToken(userId: string, familyId: string = randomUUID(), executor?: DbOrTx): Promise<{ raw: string; expiresAt: Date; id: string }> {
     const raw = randomBytes(48).toString('hex');
     const expiresAt = new Date(Date.now() + this.config.get('REFRESH_TTL_DAYS') * 86_400_000);
-    await this.drizzle.db.insert(refreshTokens).values({ userId, familyId, tokenHash: sha256(raw), expiresAt });
-    return { raw, expiresAt };
+    const [row] = await (executor ?? this.drizzle.db).insert(refreshTokens).values({ userId, familyId, tokenHash: sha256(raw), expiresAt }).returning({ id: refreshTokens.id });
+    return { raw, expiresAt, id: row.id };
   }
 
   /** Rotates: revokes the presented token and issues a new one in the same family. Reuse of a revoked token kills the family. */
@@ -31,16 +31,30 @@ export class TokenService {
     const [row] = await db.select().from(refreshTokens).where(eq(refreshTokens.tokenHash, sha256(raw)));
     if (!row) throw new DomainError('TOKEN_INVALID', 'Unknown refresh token', 401);
     if (row.revokedAt) {
-      await db.update(refreshTokens).set({ revokedAt: new Date() }).where(and(eq(refreshTokens.familyId, row.familyId), isNull(refreshTokens.revokedAt)));
+      await this.revokeFamily(row.familyId);
       throw new DomainError('TOKEN_REUSED', 'Refresh token reuse detected', 401);
     }
     if (row.expiresAt < new Date()) throw new DomainError('TOKEN_EXPIRED', 'Refresh token expired', 401);
     const [user] = await db.select().from(users).where(eq(users.id, row.userId));
     if (!user || !user.isActive) throw new DomainError('USER_INACTIVE', 'User is inactive', 401);
-    const next = await this.createRefreshToken(row.userId, row.familyId);
-    const [nextRow] = await db.select({ id: refreshTokens.id }).from(refreshTokens).where(eq(refreshTokens.tokenHash, sha256(next.raw)));
-    await db.update(refreshTokens).set({ revokedAt: new Date(), replacedById: nextRow.id }).where(eq(refreshTokens.id, row.id));
-    return { ...next, user };
+    // Claim the old token atomically; only one concurrent caller can win.
+    const next = await db.transaction(async (tx) => {
+      const claimed = await tx.update(refreshTokens).set({ revokedAt: new Date() })
+        .where(and(eq(refreshTokens.id, row.id), isNull(refreshTokens.revokedAt))).returning({ id: refreshTokens.id });
+      if (claimed.length === 0) return null;
+      const created = await this.createRefreshToken(row.userId, row.familyId, tx);
+      await tx.update(refreshTokens).set({ replacedById: created.id }).where(eq(refreshTokens.id, row.id));
+      return created;
+    });
+    if (!next) {
+      await this.revokeFamily(row.familyId);
+      throw new DomainError('TOKEN_REUSED', 'Refresh token reuse detected', 401);
+    }
+    return { raw: next.raw, expiresAt: next.expiresAt, user };
+  }
+
+  private async revokeFamily(familyId: string): Promise<void> {
+    await this.drizzle.db.update(refreshTokens).set({ revokedAt: new Date() }).where(and(eq(refreshTokens.familyId, familyId), isNull(refreshTokens.revokedAt)));
   }
 
   async revokeRefreshToken(raw: string): Promise<void> {

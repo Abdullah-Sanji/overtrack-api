@@ -9,12 +9,17 @@ import cookie from '@fastify/cookie';
 import rateLimit from '@fastify/rate-limit';
 import { AppModule } from './app.module';
 import { Env } from './common/config/env';
+import { DomainError } from './common/errors/domain-error';
 
 export async function configureApp(app: NestFastifyApplication): Promise<void> {
-  // Must come first so the onRoute hook exists before Nest registers routes.
-  await app.register(rateLimit, { global: false });
+  // Must come first so the hook exists before Nest registers routes. It must be added before
+  // the plugin registers so it mutates route.config before the plugin's own onRoute hook reads it.
   app.getHttpAdapter().getInstance().addHook('onRoute', (route) => {
     if (route.url.startsWith('/api/v1/auth/')) route.config = { ...(route.config ?? {}), rateLimit: { max: 10, timeWindow: '1 minute' } };
+  });
+  await app.register(rateLimit, {
+    global: false,
+    errorResponseBuilder: () => new DomainError('RATE_LIMITED', 'Too many requests, try again later', 429),
   });
   const config = app.get(ConfigService<Env, true>);
   app.setGlobalPrefix('api/v1');

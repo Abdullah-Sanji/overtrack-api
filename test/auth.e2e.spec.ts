@@ -68,6 +68,12 @@ describe('auth', () => {
     expect(res.statusCode).toBe(401);
   });
 
+  it('rate-limits auth routes to 10 requests per minute', async () => {
+    const attempt = () => app.inject({ method: 'POST', url: '/api/v1/auth/login', remoteAddress: '10.0.0.1', payload: { email: 'nobody@t.local', password: 'wrong-password' } });
+    for (let i = 0; i < 10; i++) expect((await attempt()).statusCode).toBe(401);
+    expect((await attempt()).statusCode).toBe(429);
+  });
+
   // Un-skip in Task 5 once GET /users exists.
   it.skip('enforces @Roles on admin routes', async () => {
     const u = await createUser(db, { role: 'employee' });
