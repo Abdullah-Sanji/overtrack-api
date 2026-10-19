@@ -12,6 +12,7 @@ export const envSchema = z.object({
   SMTP_URL: z.string().min(1),
   MAIL_FROM: z.string().min(1),
   STORAGE_PATH: z.string().min(1).default('./storage'),
+  TRUST_PROXY: z.string().default('false'),
   DEFAULT_TIMEZONE: z.string().min(1).default('UTC'),
 });
 
@@ -24,4 +25,13 @@ export function validateEnv(raw: Record<string, unknown>): Env {
     throw new Error(`Invalid environment:\n${issues}`);
   }
   return result.data;
+}
+
+/** 'true' | 'false' | hop count, as accepted by Fastify's trustProxy option. */
+export function parseTrustProxy(raw: string): boolean | number {
+  const v = raw.trim().toLowerCase();
+  if (v === 'true') return true;
+  if (v === 'false' || v === '') return false;
+  if (/^\d+$/.test(v)) return Number(v);
+  throw new Error(`Invalid TRUST_PROXY: ${raw}`);
 }

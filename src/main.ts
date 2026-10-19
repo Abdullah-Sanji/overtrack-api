@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
@@ -9,7 +10,7 @@ import cookie from '@fastify/cookie';
 import multipart from '@fastify/multipart';
 import rateLimit from '@fastify/rate-limit';
 import { AppModule } from './app.module';
-import { Env } from './common/config/env';
+import { Env, parseTrustProxy } from './common/config/env';
 import { DomainError } from './common/errors/domain-error';
 
 export async function configureApp(app: NestFastifyApplication): Promise<void> {
@@ -37,7 +38,8 @@ export async function configureApp(app: NestFastifyApplication): Promise<void> {
 }
 
 async function bootstrap() {
-  const app = await NestFactory.create<NestFastifyApplication>(AppModule, new FastifyAdapter({ logger: true }));
+  const trustProxy = parseTrustProxy(process.env.TRUST_PROXY ?? 'false');
+  const app = await NestFactory.create<NestFastifyApplication>(AppModule, new FastifyAdapter({ logger: true, trustProxy }));
   await configureApp(app);
   const config = app.get(ConfigService<Env, true>);
   await app.listen({ port: config.get('PORT'), host: '0.0.0.0' });
