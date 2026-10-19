@@ -42,6 +42,7 @@ export class AuthService {
   async setPasswordByToken(raw: string, purpose: 'invite' | 'reset', password: string) {
     const userId = await this.tokens.consumePasswordToken(raw, purpose);
     await this.drizzle.db.update(users).set({ passwordHash: await AuthService.hashPassword(password), updatedAt: new Date() }).where(eq(users.id, userId));
+    await this.tokens.revokeAllForUser(userId);
   }
 
   async me(id: string): Promise<PublicUser> {

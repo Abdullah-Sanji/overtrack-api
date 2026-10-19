@@ -18,9 +18,10 @@ export class TokenService {
     return this.jwt.signAsync({ sub: user.id, role: user.role, teamId: user.teamId }, { expiresIn: this.config.get('JWT_ACCESS_TTL_SECONDS') });
   }
 
-  async createRefreshToken(userId: string, familyId: string = randomUUID(), executor?: DbOrTx): Promise<{ raw: string; expiresAt: Date; id: string }> {
+  async createRefreshToken(userId: string, familyId: string = randomUUID(), executor?: DbOrTx, absoluteExpiresAt?: Date): Promise<{ raw: string; expiresAt: Date; id: string }> {
     const raw = randomBytes(48).toString('hex');
-    const expiresAt = new Date(Date.now() + this.config.get('REFRESH_TTL_DAYS') * 86_400_000);
+    // rotation passes the family's original expiry so a session never outlives its absolute lifetime
+    const expiresAt = absoluteExpiresAt ?? new Date(Date.now() + this.config.get('REFRESH_TTL_DAYS') * 86_400_000);
     const [row] = await (executor ?? this.drizzle.db).insert(refreshTokens).values({ userId, familyId, tokenHash: sha256(raw), expiresAt }).returning({ id: refreshTokens.id });
     return { raw, expiresAt, id: row.id };
   }
@@ -42,7 +43,7 @@ export class TokenService {
       const claimed = await tx.update(refreshTokens).set({ revokedAt: new Date() })
         .where(and(eq(refreshTokens.id, row.id), isNull(refreshTokens.revokedAt))).returning({ id: refreshTokens.id });
       if (claimed.length === 0) return null;
-      const created = await this.createRefreshToken(row.userId, row.familyId, tx);
+      const created = await this.createRefreshToken(row.userId, row.familyId, tx, row.expiresAt);
       await tx.update(refreshTokens).set({ replacedById: created.id }).where(eq(refreshTokens.id, row.id));
       return created;
     });
@@ -55,6 +56,10 @@ export class TokenService {
 
   private async revokeFamily(familyId: string): Promise<void> {
     await this.drizzle.db.update(refreshTokens).set({ revokedAt: new Date() }).where(and(eq(refreshTokens.familyId, familyId), isNull(refreshTokens.revokedAt)));
+  }
+
+  async revokeAllForUser(userId: string, executor?: DbOrTx): Promise<void> {
+    await (executor ?? this.drizzle.db).update(refreshTokens).set({ revokedAt: new Date() }).where(and(eq(refreshTokens.userId, userId), isNull(refreshTokens.revokedAt)));
   }
 
   async revokeRefreshToken(raw: string): Promise<void> {

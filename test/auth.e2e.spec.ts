@@ -3,7 +3,9 @@ import { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { createTestApp, login, bearer } from './helpers/app';
 import { truncateAll } from './helpers/db';
 import { createUser } from './helpers/factories';
+import { eq } from 'drizzle-orm';
 import { DrizzleService } from '@/database/drizzle.service';
+import { refreshTokens } from '@/database/schema';
 
 describe('auth', () => {
   let app: NestFastifyApplication;
@@ -57,6 +59,16 @@ describe('auth', () => {
     // the rotated token is now dead too
     const after = await app.inject({ method: 'POST', url: '/api/v1/auth/refresh', headers: { cookie: second } });
     expect(after.statusCode).toBe(401);
+  });
+
+  it('rotation keeps the family\'s original expiry', async () => {
+    const u = await createUser(db);
+    const { cookie } = await login(app, u.email, u.password);
+    const first = await app.inject({ method: 'POST', url: '/api/v1/auth/refresh', headers: { cookie } });
+    expect(first.statusCode).toBe(200);
+    const rows = await db.select().from(refreshTokens).where(eq(refreshTokens.userId, u.id));
+    expect(rows).toHaveLength(2);
+    expect(rows[0].expiresAt.getTime()).toBe(rows[1].expiresAt.getTime());
   });
 
   it('logout revokes the refresh token', async () => {

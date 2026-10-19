@@ -75,6 +75,7 @@ export class UsersService {
       const [before] = await tx.select().from(users).where(eq(users.id, id));
       if (!before) throw notFound('User');
       const [u] = await tx.update(users).set({ isActive, updatedAt: new Date() }).where(eq(users.id, id)).returning();
+      if (!isActive) await this.tokens.revokeAllForUser(id, tx);
       await this.audit.record(tx, { actorId, action: isActive ? 'user.reactivated' : 'user.deactivated', entityType: 'user', entityId: id, before: toPublicUser(before), after: toPublicUser(u) });
       return toPublicUser(u);
     });
@@ -101,6 +102,7 @@ export class UsersService {
     const [u] = await this.drizzle.db.select().from(users).where(eq(users.id, id));
     if (!u?.passwordHash || !(await argon2.verify(u.passwordHash, currentPassword))) throw new DomainError('INVALID_CREDENTIALS', 'Current password is incorrect', 401);
     await this.drizzle.db.update(users).set({ passwordHash: await AuthService.hashPassword(newPassword), updatedAt: new Date() }).where(eq(users.id, id));
+    await this.tokens.revokeAllForUser(id);
   }
 
   async listByRole(role: typeof users.$inferSelect.role): Promise<PublicUser[]> {
