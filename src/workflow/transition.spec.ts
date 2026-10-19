@@ -46,6 +46,7 @@ describe('submit', () => {
     const r2 = transition(sheet({ employeeId: 'dm' }), [], dm, { type: 'submit', chain }, NOW);
     expect(r2.insertSteps.map((s) => s.status)).toEqual(['pending', 'skipped', 'pending']);
     expect(r2.patch.currentStepPosition).toBe(1);
+    expect(r2.events[0].payload.approverIds).toEqual(['tl']);
   });
   it('auto-approves when every step is skipped', () => {
     const r = transition(sheet({ employeeId: 'cto' }), [], cto, { type: 'submit', chain: [{ position: 1, label: 'CTO', approverId: 'cto', backupApproverId: null }] }, NOW);
@@ -63,6 +64,10 @@ describe('approve', () => {
     expect(r.events).toEqual([{ name: 'sheet.step_approved', payload: { sheetId: 's1', employeeId: 'emp', approverIds: ['dm'], actorId: 'tl' } }]);
   });
   it('backup approver may approve', () => { expect(code(() => transition(sub, steps(), dm, { type: 'approve' }, NOW))).toBeNull(); });
+  it('owner who is backup on the current step cannot approve own sheet', () => {
+    const own = sheet({ employeeId: 'dm', status: 'submitted', currentStepPosition: 1, submittedAt: NOW });
+    expect(code(() => transition(own, steps(), dm, { type: 'approve' }, NOW))).toBe('NOT_CURRENT_APPROVER');
+  });
   it('wrong approver is NOT_CURRENT_APPROVER; non-submitted is INVALID_TRANSITION', () => {
     expect(code(() => transition(sub, steps(), cto, { type: 'approve' }, NOW))).toBe('NOT_CURRENT_APPROVER');
     expect(code(() => transition(sub, steps(), emp, { type: 'approve' }, NOW))).toBe('NOT_CURRENT_APPROVER');
@@ -96,6 +101,10 @@ describe('reject', () => {
       { position: 3, status: 'skipped', decidedById: null, decidedAt: NOW, comment: 'round rejected', overrideReason: null },
     ]);
     expect(r.events[0]).toEqual({ name: 'sheet.rejected', payload: { sheetId: 's1', employeeId: 'emp', approverIds: [], actorId: 'dm', reason: 'Missing ticket refs' } });
+  });
+  it('owner who is backup on the current step cannot reject own sheet', () => {
+    const own = sheet({ employeeId: 'dm', status: 'submitted', currentStepPosition: 1, submittedAt: NOW });
+    expect(code(() => transition(own, steps(), dm, { type: 'reject', reason: 'Self reject attempt' }, NOW))).toBe('NOT_CURRENT_APPROVER');
   });
   it('requires a reason of 5+ chars', () => { expect(code(() => transition(sub, steps(['approved', 'pending', 'pending']), dm, { type: 'reject', reason: 'no' }, NOW))).toBe('REASON_REQUIRED'); });
 });

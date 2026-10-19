@@ -1,6 +1,6 @@
 import { ApprovalStepStatus, SheetStatus, UserRole } from '@/database/schema';
 import { DomainError, forbidden } from '@/common/errors/domain-error';
-import { ChainStepInput } from '@/approval-chains/approval-chains.service';
+import type { ChainStepInput } from '@/approval-chains/approval-chains.service';
 
 export type Actor = { id: string; role: UserRole };
 export interface TSheet { id: string; employeeId: string; status: SheetStatus; round: number; currentStepPosition: number | null; submittedAt: Date | null; entryCount: number }
@@ -26,7 +26,7 @@ const invalid = (msg: string) => new DomainError('INVALID_TRANSITION', msg, 409)
 const needReason = (what: string) => new DomainError('REASON_REQUIRED', `${what} requires a reason`, 400);
 const base = (): TransitionResult => ({ patch: {}, insertSteps: [], updateSteps: [], deleteCurrentRoundSteps: false, auditAction: '', reason: null, events: [] });
 const ev = (name: WorkflowEventName, sheet: TSheet, actor: Actor, approverIds: string[], reason?: string): WorkflowEvent => ({ name, payload: { sheetId: sheet.id, employeeId: sheet.employeeId, approverIds, actorId: actor.id, ...(reason ? { reason } : {}) } });
-const approversOf = (s: TStep) => [s.approverId, ...(s.backupApproverId ? [s.backupApproverId] : [])];
+const approversOf = (s: TStep, employeeId: string) => [s.approverId, s.backupApproverId].filter((id): id is string => id !== null && id !== employeeId);
 const isFinance = (a: Actor) => a.role === 'finance' || a.role === 'admin';
 
 export function transition(sheet: TSheet, steps: TStep[], actor: Actor, action: Action, now: Date): TransitionResult {
@@ -55,7 +55,7 @@ function submit(sheet: TSheet, actor: Actor, chain: ChainStepInput[], now: Date)
   const first = r.insertSteps.find((s) => s.status === 'pending');
   r.patch = { status: 'submitted', round, currentStepPosition: first?.position ?? null, submittedAt: now, rejectedAt: null, rejectionReason: null };
   r.auditAction = 'sheet.submitted';
-  r.events.push(ev('sheet.submitted', sheet, actor, first ? approversOf(first) : []));
+  r.events.push(ev('sheet.submitted', sheet, actor, first ? approversOf(first, sheet.employeeId) : []));
   if (!first) {
     r.patch = { ...r.patch, status: 'approved', approvedAt: now, currentStepPosition: null };
     r.auditAction = 'sheet.approved';
@@ -72,7 +72,7 @@ function withdraw(sheet: TSheet, steps: TStep[], actor: Actor): TransitionResult
   r.patch = { status: 'draft', currentStepPosition: null };
   r.deleteCurrentRoundSteps = true;
   r.auditAction = 'sheet.withdrawn';
-  r.events.push(ev('sheet.withdrawn', sheet, actor, [...new Set(steps.flatMap(approversOf))]));
+  r.events.push(ev('sheet.withdrawn', sheet, actor, [...new Set(steps.flatMap((s) => approversOf(s, sheet.employeeId)))]));
   return r;
 }
 
@@ -80,8 +80,9 @@ function decide(sheet: TSheet, steps: TStep[], actor: Actor, d: { kind: 'approve
   if (sheet.status !== 'submitted') throw invalid(`Cannot ${d.kind} a ${sheet.status} sheet`);
   const current = steps.find((s) => s.position === sheet.currentStepPosition && s.status === 'pending');
   if (!current) throw invalid('Sheet has no pending step');
+  if (actor.id === sheet.employeeId) throw new DomainError('NOT_CURRENT_APPROVER', 'You cannot decide on your own sheet', 403);
   const isAdmin = actor.role === 'admin';
-  const named = approversOf(current).includes(actor.id);
+  const named = approversOf(current, sheet.employeeId).includes(actor.id);
   if (!named && !isAdmin) throw new DomainError('NOT_CURRENT_APPROVER', 'You are not the approver for the current step', 403);
   if (!named && isAdmin && !d.overrideReason?.trim()) throw needReason('Admin override');
   if (d.kind === 'reject' && (d.comment ?? '').trim().length < 5) throw needReason('Rejection');
@@ -99,7 +100,7 @@ function decide(sheet: TSheet, steps: TStep[], actor: Actor, d: { kind: 'approve
   if (next) {
     r.patch = { currentStepPosition: next.position };
     r.auditAction = 'sheet.step_approved';
-    r.events.push(ev('sheet.step_approved', sheet, actor, approversOf(next)));
+    r.events.push(ev('sheet.step_approved', sheet, actor, approversOf(next, sheet.employeeId)));
   } else {
     r.patch = { status: 'approved', approvedAt: now, currentStepPosition: null };
     r.auditAction = 'sheet.approved';
