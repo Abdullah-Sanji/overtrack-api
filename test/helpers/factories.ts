@@ -1,5 +1,5 @@
 import { Db } from '@/database/drizzle.service';
-import { users, teams, UserRole, overtimeTypes, sheets, sheetEntries } from '@/database/schema';
+import { users, teams, UserRole, overtimeTypes, sheets, sheetEntries, approvalChainSteps } from '@/database/schema';
 import * as argon2 from 'argon2';
 
 let counter = 0;
@@ -44,4 +44,8 @@ export async function createEntry(db: Db, sheetId: string, typeId: string, o: Pa
     multiplierSnapshot: multiplier, weightedHours: (Number(hours) * Number(multiplier)).toFixed(2), workItem: 'PROJ-1', description: 'Did some overtime work',
   }).returning();
   return e;
+}
+
+export async function createChain(db: Db, teamId: string, approvers: Array<{ label: string; approverId: string; backupApproverId?: string | null }>) {
+  return db.insert(approvalChainSteps).values(approvers.map((a, i) => ({ teamId, position: i + 1, label: a.label, approverId: a.approverId, backupApproverId: a.backupApproverId ?? null }))).returning();
 }
