@@ -1,10 +1,11 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { NestFastifyApplication } from '@nestjs/platform-fastify';
-import { sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { createTestApp, login, bearer } from './helpers/app';
 import { truncateAll } from './helpers/db';
 import { createUser, createTeam, createChain, createOvertimeType, createSheet, createEntry } from './helpers/factories';
 import { DrizzleService } from '@/database/drizzle.service';
+import { sheets } from '@/database/schema';
 
 describe('team month report', () => {
   let app: NestFastifyApplication; let db: DrizzleService['db'];
@@ -44,5 +45,30 @@ describe('team month report', () => {
     const fin = await createUser(db, { role: 'finance' });
     expect((await app.inject({ method: 'GET', url: `/api/v1/reports/team-month?teamId=${f.team.id}&period=2026-09`, headers: bearer(await tok(fin)) })).statusCode).toBe(200);
     expect((await app.inject({ method: 'GET', url: `/api/v1/reports/team-month?teamId=${f.team.id}&period=2026-09`, headers: bearer(await tok(f.a)) })).statusCode).toBe(403);
+  });
+
+  it('filters rows by sheet status but keeps every member', async () => {
+    const f = await fixture();
+    await db.update(sheets).set({ status: 'approved' }).where(eq(sheets.employeeId, f.a.id));
+    const res = await app.inject({ method: 'GET', url: `/api/v1/reports/team-month?teamId=${f.team.id}&period=2026-09&status=approved`, headers: bearer(await tok(f.tl)) });
+    expect(res.statusCode).toBe(200);
+    const r = res.json().data;
+    expect(r.rows).toHaveLength(3);
+    expect(r.rows[0].sheet).not.toBeNull(); expect(r.rows[0].sheet.status).toBe('approved');
+    expect(r.rows[1].sheet).toBeNull(); expect(r.rows[1].totalHours).toBe(0);
+  });
+
+  it('exports xlsx and csv for a team, and all teams for finance', async () => {
+    const f = await fixture();
+    const x = await app.inject({ method: 'GET', url: `/api/v1/reports/team-month/export?teamId=${f.team.id}&period=2026-09`, headers: bearer(await tok(f.tl)) });
+    expect(x.statusCode).toBe(200); expect(x.headers['content-disposition']).toBe('attachment; filename="overtrack-platform-2026-09.xlsx"');
+    expect(x.rawPayload.subarray(0, 2).toString()).toBe('PK');
+    const c = await app.inject({ method: 'GET', url: `/api/v1/reports/team-month/export?teamId=${f.team.id}&period=2026-09&format=csv`, headers: bearer(await tok(f.tl)) });
+    expect(c.body.split('\n')[0]).toContain('Employee code,Employee');
+    expect(c.body.trim().split('\n')).toHaveLength(4);
+    const fin = await createUser(db, { role: 'finance' });
+    const all = await app.inject({ method: 'GET', url: `/api/v1/reports/employees/export?period=2026-09&format=csv`, headers: bearer(await tok(fin)) });
+    expect(all.headers['content-disposition']).toContain('overtrack-all-2026-09.csv');
+    expect((await app.inject({ method: 'GET', url: `/api/v1/reports/employees/export?period=2026-09`, headers: bearer(await tok(f.a)) })).statusCode).toBe(403);
   });
 });
