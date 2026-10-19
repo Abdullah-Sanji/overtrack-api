@@ -16,6 +16,7 @@ import { DatabaseModule } from './database/database.module';
 import { HealthModule } from './health/health.module';
 import { MailModule } from './mail/mail.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { ReportsModule } from './reports/reports.module';
 import { OvertimeTypesModule } from './overtime-types/overtime-types.module';
 import { SheetsModule } from './sheets/sheets.module';
 import { TeamsModule } from './teams/teams.module';
@@ -39,6 +40,7 @@ import { WorkflowModule } from './workflow/workflow.module';
     AttachmentsModule,
     WorkflowModule,
     NotificationsModule,
+    ReportsModule,
     HealthModule,
   ],
   providers: [
