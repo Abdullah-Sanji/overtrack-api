@@ -10,7 +10,7 @@ const zHours = z.number().min(0.25).max(16).refine(isQuarterStep, 'Hours must be
 
 const entryBase = z.object({
   date: zDate, startTime: zTime, endTime: zTime, hours: zHours.optional(), overtimeTypeId: zUuid,
-  workItem: z.string().min(1).max(120), workItemUrl: z.string().url().max(500).nullable().optional(),
+  workItem: z.string().min(1).max(120), workItemUrl: z.string().url().max(500).refine((u) => /^https?:\/\//i.test(u), 'Must be an http(s) URL').nullable().optional(),
   description: z.string().min(10).max(1000), requestedById: zUuid.nullable().optional(),
 });
 const timeOrder = (v: { startTime: string; endTime: string }) => hoursBetween(v.startTime, v.endTime) > 0;

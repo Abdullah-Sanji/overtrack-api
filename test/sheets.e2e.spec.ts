@@ -46,6 +46,15 @@ describe('sheets and entries', () => {
     expect(d.json().data.entries).toHaveLength(1);
   });
 
+  it('accepts only http(s) work item URLs', async () => {
+    const s = await sheetFor();
+    const bad = await app.inject({ method: 'POST', url: `/api/v1/sheets/${s.id}/entries`, headers: bearer(token), payload: entry({ workItemUrl: 'javascript:alert(1)' }) });
+    expect(bad.statusCode).toBe(400); expect(bad.json().code).toBe('VALIDATION_FAILED');
+    expect(JSON.stringify(bad.json())).toContain('workItemUrl');
+    const ok = await app.inject({ method: 'POST', url: `/api/v1/sheets/${s.id}/entries`, headers: bearer(token), payload: entry({ workItemUrl: 'https://jira.example.com/PROJ-12' }) });
+    expect(ok.statusCode).toBe(201);
+  });
+
   it('rejects end before start, crossing midnight, and bad quarter steps', async () => {
     const s = await sheetFor();
     const r1 = await app.inject({ method: 'POST', url: `/api/v1/sheets/${s.id}/entries`, headers: bearer(token), payload: entry({ startTime: '20:00', endTime: '18:00' }) });
