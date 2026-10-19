@@ -4,3 +4,4 @@ dist
 storage
 coverage
 storage-test
+*.tsbuildinfo
