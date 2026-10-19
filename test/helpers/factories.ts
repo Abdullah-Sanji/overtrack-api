@@ -1,6 +1,8 @@
 import { Db } from '@/database/drizzle.service';
 import { users, teams, UserRole, overtimeTypes, sheets, sheetEntries, approvalChainSteps } from '@/database/schema';
 import * as argon2 from 'argon2';
+import { NestFastifyApplication } from '@nestjs/platform-fastify';
+import { bearer } from './app';
 
 let counter = 0;
 
@@ -48,4 +50,20 @@ export async function createEntry(db: Db, sheetId: string, typeId: string, o: Pa
 
 export async function createChain(db: Db, teamId: string, approvers: Array<{ label: string; approverId: string; backupApproverId?: string | null }>) {
   return db.insert(approvalChainSteps).values(approvers.map((a, i) => ({ teamId, position: i + 1, label: a.label, approverId: a.approverId, backupApproverId: a.backupApproverId ?? null }))).returning();
+}
+
+/** Builds team + chain (TL → DM → CTO), an employee with entries, and submits the sheet. */
+export async function submittedSheet(app: NestFastifyApplication, db: Db, loginFn: (email: string, password: string) => Promise<{ accessToken: string }>) {
+  const tl = await createUser(db, { role: 'tech_lead' }); const dm = await createUser(db, { role: 'delivery_manager' }); const cto = await createUser(db, { role: 'cto' });
+  const team = await createTeam(db, { techLeadId: tl.id });
+  await createChain(db, team.id, [{ label: 'Tech Lead', approverId: tl.id, backupApproverId: dm.id }, { label: 'Delivery Manager', approverId: dm.id }, { label: 'CTO', approverId: cto.id }]);
+  const emp = await createUser(db, { teamId: team.id });
+  const type = await createOvertimeType(db, { multiplier: '1.50' });
+  const sheet = await createSheet(db, emp.id, '2026-09');
+  await createEntry(db, sheet.id, type.id, { date: '2026-09-10' });
+  await createEntry(db, sheet.id, type.id, { date: '2026-09-11' });
+  const empToken = (await loginFn(emp.email, emp.password)).accessToken;
+  const res = await app.inject({ method: 'POST', url: `/api/v1/sheets/${sheet.id}/submit`, headers: bearer(empToken), payload: { version: 1 } });
+  if (res.statusCode !== 200) throw new Error(`submit failed: ${res.body}`);
+  return { tl, dm, cto, team, emp, type, sheetId: sheet.id as string, empToken, version: res.json().data.version as number };
 }
