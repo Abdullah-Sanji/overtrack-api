@@ -39,12 +39,16 @@ export class TeamMonthService {
     const members = await db.select({ id: users.id, firstName: users.firstName, lastName: users.lastName, employeeCode: users.employeeCode }).from(users).where(and(eq(users.teamId, q.teamId), eq(users.isActive, true))).orderBy(asc(users.firstName), asc(users.lastName));
     const sheetRows = await db.select({ sheet: sheets, employee: { id: users.id, firstName: users.firstName, lastName: users.lastName, employeeCode: users.employeeCode, teamId: users.teamId, teamName: teams.name } })
       .from(sheets).innerJoin(users, eq(users.id, sheets.employeeId)).leftJoin(teams, eq(teams.id, users.teamId))
-      .where(and(eq(sheets.period, periodToDate(q.period)), eq(users.teamId, q.teamId), q.status ? eq(sheets.status, q.status) : undefined));
+      .where(and(eq(sheets.period, periodToDate(q.period)), eq(sheets.teamId, q.teamId), q.status ? eq(sheets.status, q.status) : undefined));
     const byEmployee = new Map(sheetRows.map((r) => [r.sheet.employeeId, r]));
+    // active current members plus anyone with a sheet attributed to this team that month (leavers/movers)
+    const known = new Set(members.map((m) => m.id));
+    const extra = sheetRows.filter((r) => !known.has(r.sheet.employeeId)).map((r) => ({ id: r.employee.id, firstName: r.employee.firstName, lastName: r.employee.lastName, employeeCode: r.employee.employeeCode }));
+    const everyone = [...members, ...extra].sort((a, b) => a.firstName.localeCompare(b.firstName) || a.lastName.localeCompare(b.lastName));
     const typeRows = await db.select().from(overtimeTypes).orderBy(asc(overtimeTypes.sortOrder));
     const usedTypeIds = new Set<string>();
     const rows: TeamMonthRow[] = [];
-    for (const m of members) {
+    for (const m of everyone) {
       const s = byEmployee.get(m.id);
       const entries = s ? await this.sheetsSvc.entriesOf(s.sheet.id) : [];
       const hoursByType: Record<string, number> = {};

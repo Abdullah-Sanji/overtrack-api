@@ -1,5 +1,5 @@
 import { pgTable, uuid, date, integer, numeric, timestamp, text, uniqueIndex, index } from 'drizzle-orm/pg-core';
-import { users, timestamps } from './users-teams';
+import { users, teams, timestamps } from './users-teams';
 import { sheetStatusEnum } from './enums';
 
 export const sheets = pgTable(
@@ -7,6 +7,7 @@ export const sheets = pgTable(
   {
     id: uuid('id').primaryKey().defaultRandom(),
     employeeId: uuid('employee_id').notNull().references(() => users.id),
+    teamId: uuid('team_id').references(() => teams.id), // snapshot of the employee's team: set on create, refreshed on submit
     period: date('period').notNull(), // first day of month, YYYY-MM-01
     status: sheetStatusEnum('status').notNull().default('draft'),
     round: integer('round').notNull().default(1),
@@ -23,5 +24,5 @@ export const sheets = pgTable(
     version: integer('version').notNull().default(1),
     ...timestamps,
   },
-  (t) => [uniqueIndex('sheets_employee_period_idx').on(t.employeeId, t.period), index('sheets_status_idx').on(t.status)],
+  (t) => [uniqueIndex('sheets_employee_period_idx').on(t.employeeId, t.period), index('sheets_status_idx').on(t.status), index('sheets_team_idx').on(t.teamId)],
 );

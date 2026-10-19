@@ -25,10 +25,12 @@ export class WorkflowService {
       const steps: TStep[] = stepRows.map((s) => ({ position: s.position, label: s.label, approverId: s.approverId, backupApproverId: s.backupApproverId, status: s.status }));
 
       let effective = action;
+      let submitTeamId: string | null = null;
       if (action.type === 'submit') {
         const [emp] = await tx.select({ teamId: users.teamId }).from(users).where(eq(users.id, row.employeeId));
         if (!emp?.teamId) throw new DomainError('USER_HAS_NO_TEAM', 'You must belong to a team before submitting', 409);
         effective = { type: 'submit', chain: await this.chains.snapshotInput(tx, emp.teamId) };
+        submitTeamId = emp.teamId;
       }
 
       const result = transition(
@@ -46,7 +48,7 @@ export class WorkflowService {
         await tx.update(sheetApprovalSteps).set({ status: u.status, decidedById: u.decidedById, decidedAt: u.decidedAt, comment: u.comment, overrideReason: u.overrideReason })
           .where(and(eq(sheetApprovalSteps.sheetId, sheetId), eq(sheetApprovalSteps.round, result.patch.round ?? row.round), eq(sheetApprovalSteps.position, u.position)));
       }
-      const [updated] = await tx.update(sheets).set({ ...result.patch, version: row.version + 1, updatedAt: now }).where(eq(sheets.id, sheetId)).returning();
+      const [updated] = await tx.update(sheets).set({ ...result.patch, ...(submitTeamId ? { teamId: submitTeamId } : {}), version: row.version + 1, updatedAt: now }).where(eq(sheets.id, sheetId)).returning();
       await this.audit.record(tx, { actorId: actor.id, action: result.auditAction, entityType: 'sheet', entityId: sheetId, reason: result.reason,
         before: { status: row.status, round: row.round, currentStepPosition: row.currentStepPosition }, after: { status: updated.status, round: updated.round, currentStepPosition: updated.currentStepPosition } });
       const raw = await this.sheetsSvc.findRaw(sheetId, tx);

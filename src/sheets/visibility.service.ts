@@ -19,11 +19,12 @@ export class VisibilityService {
     return [...new Set([...led, ...onChain].map((r) => r.id))];
   }
 
-  async canViewSheet(actor: AuthUser, sheet: { id: string; employeeId: string; teamId: string | null }): Promise<boolean> {
+  async canViewSheet(actor: AuthUser, sheet: { id: string; employeeId: string; teamId: string | null; sheetTeamId?: string | null }): Promise<boolean> {
     if (sheet.employeeId === actor.id) return true;
     const visible = await this.visibleTeamIds(actor);
     if (visible === 'all') return true;
     if (sheet.teamId && visible.includes(sheet.teamId)) return true;
+    if (sheet.sheetTeamId && visible.includes(sheet.sheetTeamId)) return true;
     // approvers named on the sheet's own snapshot (the team chain may have changed since submission)
     const [named] = await this.drizzle.db.select({ id: sheetApprovalSteps.id }).from(sheetApprovalSteps)
       .where(and(eq(sheetApprovalSteps.sheetId, sheet.id), or(eq(sheetApprovalSteps.approverId, actor.id), eq(sheetApprovalSteps.backupApproverId, actor.id))))

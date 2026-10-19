@@ -55,7 +55,7 @@ export class AttachmentsService {
       .innerJoin(sheetEntries, eq(sheetEntries.attachmentId, attachments.id)).innerJoin(sheets, eq(sheets.id, sheetEntries.sheetId)).innerJoin(users, eq(users.id, sheets.employeeId))
       .where(eq(attachments.id, attachmentId));
     if (!r) throw notFound('Attachment');
-    if (!(await this.visibility.canViewSheet(actor, { id: r.sheet.id, employeeId: r.sheet.employeeId, teamId: r.teamId }))) throw forbidden();
+    if (!(await this.visibility.canViewSheet(actor, { id: r.sheet.id, employeeId: r.sheet.employeeId, teamId: r.teamId, sheetTeamId: r.sheet.teamId }))) throw forbidden();
     return { stream: this.storage.stream(r.a.storageKey), mimeType: r.a.mimeType, originalName: r.a.originalName };
   }
 }

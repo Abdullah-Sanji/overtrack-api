@@ -1,5 +1,6 @@
 import { Db } from '@/database/drizzle.service';
 import { users, teams, UserRole, overtimeTypes, sheets, sheetEntries, approvalChainSteps } from '@/database/schema';
+import { eq } from 'drizzle-orm';
 import * as argon2 from 'argon2';
 import { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { bearer } from './app';
@@ -35,7 +36,8 @@ export async function createOvertimeType(db: Db, o: Partial<{ name: string; mult
 }
 
 export async function createSheet(db: Db, employeeId: string, period = '2026-09') {
-  const [s] = await db.insert(sheets).values({ employeeId, period: `${period}-01` }).returning();
+  const [emp] = await db.select({ teamId: users.teamId }).from(users).where(eq(users.id, employeeId));
+  const [s] = await db.insert(sheets).values({ employeeId, teamId: emp?.teamId ?? null, period: `${period}-01` }).returning();
   return s;
 }
 

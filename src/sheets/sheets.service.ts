@@ -40,7 +40,8 @@ export class SheetsService {
 
   async getOrCreateForPeriod(employeeId: string, period: string): Promise<SheetSummary> {
     const db = this.drizzle.db;
-    await db.insert(sheets).values({ employeeId, period: periodToDate(period) }).onConflictDoNothing();
+    const [emp] = await db.select({ teamId: users.teamId }).from(users).where(eq(users.id, employeeId));
+    await db.insert(sheets).values({ employeeId, teamId: emp?.teamId ?? null, period: periodToDate(period) }).onConflictDoNothing();
     const [r] = await this.summarySelect(db).where(and(eq(sheets.employeeId, employeeId), eq(sheets.period, periodToDate(period))));
     return SheetsService.toSummary(r);
   }
@@ -59,7 +60,7 @@ export class SheetsService {
 
   async assertCanView(actor: AuthUser, id: string) {
     const r = await this.findRaw(id);
-    if (!(await this.visibility.canViewSheet(actor, { id: r.sheet.id, employeeId: r.sheet.employeeId, teamId: r.employee.teamId }))) throw forbidden('You cannot view this sheet');
+    if (!(await this.visibility.canViewSheet(actor, { id: r.sheet.id, employeeId: r.sheet.employeeId, teamId: r.employee.teamId, sheetTeamId: r.sheet.teamId }))) throw forbidden('You cannot view this sheet');
     return r;
   }
 
@@ -121,12 +122,12 @@ export class SheetsService {
       const own = eq(sheets.employeeId, actor.id);
       const named = exists(this.drizzle.db.select({ one: sheetApprovalSteps.id }).from(sheetApprovalSteps)
         .where(and(eq(sheetApprovalSteps.sheetId, sheets.id), or(eq(sheetApprovalSteps.approverId, actor.id), eq(sheetApprovalSteps.backupApproverId, actor.id)))));
-      const seen = visible.length > 0 ? or(inArray(users.teamId, visible), named)! : named;
+      const seen = visible.length > 0 ? or(inArray(users.teamId, visible), inArray(sheets.teamId, visible), named)! : named;
       if (q.employeeId && q.employeeId !== actor.id) where.push(and(eq(sheets.employeeId, q.employeeId), seen)!);
       else if (!q.employeeId) where.push(or(own, seen)!);
       else where.push(own);
     }
-    if (q.teamId) where.push(eq(users.teamId, q.teamId));
+    if (q.teamId) where.push(eq(sheets.teamId, q.teamId));
     if (q.period) where.push(eq(sheets.period, periodToDate(q.period)));
     if (q.status) where.push(eq(sheets.status, q.status));
     const cond = where.length ? and(...where) : undefined;

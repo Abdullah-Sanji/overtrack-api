@@ -5,7 +5,7 @@ import { createTestApp, login, bearer } from './helpers/app';
 import { truncateAll } from './helpers/db';
 import { createUser, createTeam, createChain, createOvertimeType, createSheet, createEntry } from './helpers/factories';
 import { DrizzleService } from '@/database/drizzle.service';
-import { sheets } from '@/database/schema';
+import { sheets, users } from '@/database/schema';
 
 describe('team month report', () => {
   let app: NestFastifyApplication; let db: DrizzleService['db'];
@@ -70,5 +70,32 @@ describe('team month report', () => {
     const all = await app.inject({ method: 'GET', url: `/api/v1/reports/employees/export?period=2026-09&format=csv`, headers: bearer(await tok(fin)) });
     expect(all.headers['content-disposition']).toContain('overtrack-all-2026-09.csv');
     expect((await app.inject({ method: 'GET', url: `/api/v1/reports/employees/export?period=2026-09`, headers: bearer(await tok(f.a)) })).statusCode).toBe(403);
+  });
+
+  it('keeps a deactivated employee\'s sheet in the team-month report and exports', async () => {
+    const f = await fixture();
+    await db.update(users).set({ isActive: false }).where(eq(users.id, f.a.id));
+    const res = await app.inject({ method: 'GET', url: `/api/v1/reports/team-month?teamId=${f.team.id}&period=2026-09`, headers: bearer(await tok(f.tl)) });
+    const r = res.json().data;
+    expect(r.rows.map((x: { employee: { firstName: string } }) => x.employee.firstName)).toEqual(['Ann', 'Bob', 'Cid']);
+    expect(r.rows[0]).toMatchObject({ employee: { id: f.a.id }, totalHours: 6 });
+    expect(r.rows[0].sheet).not.toBeNull();
+    const fin = await createUser(db, { role: 'finance' });
+    const csv = await app.inject({ method: 'GET', url: `/api/v1/reports/employees/export?period=2026-09&format=csv`, headers: bearer(await tok(fin)) });
+    expect(csv.body).toContain(f.a.employeeCode!);
+  });
+
+  it('attributes a moved employee\'s sheet to the team it belonged to that month', async () => {
+    const f = await fixture();
+    const other = await createTeam(db, { name: 'Mobile' });
+    await db.update(users).set({ teamId: other.id }).where(eq(users.id, f.b.id));
+    const fin = await createUser(db, { role: 'finance' });
+    const get = async (teamId: string) => (await app.inject({ method: 'GET', url: `/api/v1/reports/team-month?teamId=${teamId}&period=2026-09`, headers: bearer(await tok(fin)) })).json().data;
+    const platform = await get(f.team.id);
+    const bobRow = platform.rows.find((x: { employee: { id: string } }) => x.employee.id === f.b.id);
+    expect(bobRow.sheet).not.toBeNull(); expect(bobRow.totalHours).toBe(1);
+    const mobile = await get(other.id);
+    const mobileBob = mobile.rows.find((x: { employee: { id: string } }) => x.employee.id === f.b.id);
+    expect(mobileBob.sheet).toBeNull(); expect(mobileBob.totalHours).toBe(0);
   });
 });
