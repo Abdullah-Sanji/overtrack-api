@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_FILTER, APP_GUARD, APP_PIPE } from '@nestjs/core';
 import { EventEmitterModule } from '@nestjs/event-emitter';
+import { ScheduleModule } from '@nestjs/schedule';
 import { ZodValidationPipe } from 'nestjs-zod';
 import { ApprovalChainsModule } from './approval-chains/approval-chains.module';
 import { AttachmentsModule } from './attachments/attachments.module';
@@ -14,6 +15,7 @@ import { HttpExceptionFilter } from './common/errors/http-exception.filter';
 import { DatabaseModule } from './database/database.module';
 import { HealthModule } from './health/health.module';
 import { MailModule } from './mail/mail.module';
+import { NotificationsModule } from './notifications/notifications.module';
 import { OvertimeTypesModule } from './overtime-types/overtime-types.module';
 import { SheetsModule } from './sheets/sheets.module';
 import { TeamsModule } from './teams/teams.module';
@@ -24,6 +26,7 @@ import { WorkflowModule } from './workflow/workflow.module';
   imports: [
     ConfigModule.forRoot({ isGlobal: true, validate: validateEnv, envFilePath: ['.env'] }),
     EventEmitterModule.forRoot(),
+    ScheduleModule.forRoot(),
     DatabaseModule,
     MailModule,
     AuditModule,
@@ -35,6 +38,7 @@ import { WorkflowModule } from './workflow/workflow.module';
     SheetsModule,
     AttachmentsModule,
     WorkflowModule,
+    NotificationsModule,
     HealthModule,
   ],
   providers: [
