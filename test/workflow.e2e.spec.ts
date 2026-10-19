@@ -5,7 +5,7 @@ import { createTestApp, login, bearer } from './helpers/app';
 import { truncateAll } from './helpers/db';
 import { createUser, createTeam, createChain, createOvertimeType, createSheet, createEntry, submittedSheet } from './helpers/factories';
 import { DrizzleService } from '@/database/drizzle.service';
-import { overtimeTypes, sheetEntries } from '@/database/schema';
+import { overtimeTypes, sheetEntries, users } from '@/database/schema';
 
 describe('workflow', () => {
   let app: NestFastifyApplication; let db: DrizzleService['db'];
@@ -103,5 +103,33 @@ describe('workflow', () => {
     const fin = await createUser(db, { role: 'finance' });
     const bulk = await app.inject({ method: 'POST', url: '/api/v1/sheets/mark-paid', headers: bearer(await tok(fin)), payload: { sheets: [{ id: sh2.id, version: 3 }, { id: sh.id, version: 1 }], paymentReference: 'BATCH-1' } });
     expect(bulk.json().data).toEqual({ paid: [sh2.id], failed: [{ id: sh.id, code: 'INVALID_TRANSITION' }] });
+  });
+
+  it('returns 403 for a plain employee on reopen, mark-paid, revert-paid and bulk mark-paid', async () => {
+    const s = await submittedSheet(app, db, loginFn);
+    for (const [action, payload] of [['mark-paid', { version: 2, paymentReference: 'X' }], ['revert-paid', { version: 2, reason: 'r' }], ['reopen', { version: 2, reason: 'r' }]] as const) {
+      expect((await act(s.empToken, s.sheetId, action, payload)).statusCode).toBe(403);
+    }
+    const bulk = await app.inject({ method: 'POST', url: '/api/v1/sheets/mark-paid', headers: bearer(s.empToken), payload: { sheets: [{ id: s.sheetId, version: 2 }], paymentReference: 'B' } });
+    expect(bulk.statusCode).toBe(403);
+  });
+
+  it('limits timeline visibility to owner and involved users', async () => {
+    const s = await submittedSheet(app, db, loginFn);
+    const otherTeam = await createTeam(db); const stranger = await createUser(db, { teamId: otherTeam.id });
+    const denied = await app.inject({ method: 'GET', url: `/api/v1/sheets/${s.sheetId}/timeline`, headers: bearer(await tok(stranger)) });
+    expect(denied.statusCode).toBe(403);
+    const ok = await app.inject({ method: 'GET', url: `/api/v1/sheets/${s.sheetId}/timeline`, headers: bearer(s.empToken) });
+    expect(ok.statusCode).toBe(200); expect(ok.json().data.rounds[0].steps).toHaveLength(3);
+  });
+
+  it('rejects submit with CHAIN_APPROVER_INACTIVE when a chain approver is deactivated', async () => {
+    const team = await createTeam(db); const approver = await createUser(db, { role: 'cto' });
+    await createChain(db, team.id, [{ label: 'CTO', approverId: approver.id }]);
+    const emp = await createUser(db, { teamId: team.id }); const type = await createOvertimeType(db, { multiplier: '1.50' });
+    const sh = await createSheet(db, emp.id); await createEntry(db, sh.id, type.id);
+    await db.update(users).set({ isActive: false }).where(eq(users.id, approver.id));
+    const r = await act(await tok(emp), sh.id, 'submit', { version: 1 });
+    expect(r.statusCode).toBe(409); expect(r.json().code).toBe('CHAIN_APPROVER_INACTIVE');
   });
 });
