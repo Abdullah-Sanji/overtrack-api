@@ -11,3 +11,12 @@ export async function createTestApp(): Promise<NestFastifyApplication> {
   await app.getHttpAdapter().getInstance().ready();
   return app;
 }
+
+export async function login(app: NestFastifyApplication, email: string, password: string) {
+  const res = await app.inject({ method: 'POST', url: '/api/v1/auth/login', payload: { email, password } });
+  if (res.statusCode !== 200) throw new Error(`login failed: ${res.body}`);
+  const cookie = res.cookies.find((c) => c.name === 'ot_refresh')!;
+  return { accessToken: res.json().data.accessToken as string, cookie: `${cookie.name}=${cookie.value}` };
+}
+
+export const bearer = (token: string) => ({ authorization: `Bearer ${token}` });
