@@ -7,6 +7,7 @@ import { ZodValidationPipe } from 'nestjs-zod';
 import { ApprovalChainsModule } from './approval-chains/approval-chains.module';
 import { AttachmentsModule } from './attachments/attachments.module';
 import { AuditModule } from './audit/audit.module';
+import { BootstrapModule } from './bootstrap/bootstrap.module';
 import { AuthModule } from './auth/auth.module';
 import { JwtAuthGuard } from './common/auth/jwt-auth.guard';
 import { RolesGuard } from './common/auth/roles.guard';
@@ -42,6 +43,7 @@ import { WorkflowModule } from './workflow/workflow.module';
     NotificationsModule,
     ReportsModule,
     HealthModule,
+    BootstrapModule,
   ],
   providers: [
     { provide: APP_PIPE, useClass: ZodValidationPipe },

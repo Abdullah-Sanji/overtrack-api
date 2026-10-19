@@ -16,6 +16,7 @@ import { AuthUser } from '@/common/auth/auth-user';
 const PASSWORD = 'Password123!';
 
 export async function seed(app: INestApplicationContext): Promise<void> {
+  if (process.env.NODE_ENV === 'production') throw new Error('seed is not allowed in production');
   const db = app.get(DrizzleService).db;
   const [{ n }] = await db.select({ n: count() }).from(users).where(eq(users.role, 'admin'));
   if (Number(n) > 0) return;
@@ -80,5 +81,5 @@ if (require.main === module) {
     await new Promise((resolve) => setTimeout(resolve, 100)); // let async notification listeners finish
     await ctx.close();
     console.log('seeded');
-  });
+  }).catch((err) => { console.error(err instanceof Error ? err.message : err); process.exit(1); });
 }
