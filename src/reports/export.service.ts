@@ -32,8 +32,10 @@ export class ExportService {
   }
 
   toCsv(reports: TeamMonthReport[]): string {
-    const esc = (v: string | number) => { const s = String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
-    const lines = [DETAIL_HEADERS.join(','), ...this.detailRows(reports).map((r) => r.map((c, i) => (i === 13 ? `"${String(c).replace(/"/g, '""')}"` : esc(c))).join(','))];
+    // neutralise spreadsheet formulas: string cells starting with a trigger character get a leading quote
+    const safe = (v: string | number) => (typeof v === 'string' && /^[=+\-@\t\r]/.test(v) ? `'${v}` : String(v));
+    const esc = (v: string | number) => { const s = safe(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+    const lines = [DETAIL_HEADERS.join(','), ...this.detailRows(reports).map((r) => r.map((c, i) => (i === 13 ? `"${safe(c).replace(/"/g, '""')}"` : esc(c))).join(','))];
     return lines.join('\n') + '\n';
   }
 

@@ -37,6 +37,15 @@ describe('ExportService', () => {
     expect(lines).toHaveLength(3);
     expect(lines[1]).toContain('"Hotfix"');
   });
+  it('neutralises formula injection in csv string cells', () => {
+    const r = structuredClone(report);
+    r.rows[0].entries[0].description = '=HYPERLINK("x")'; r.rows[0].entries[0].workItem = '-1';
+    const lines = svc.toCsv([r]).trim().split('\n');
+    expect(lines[1]).toContain('"\'=HYPERLINK(""x"")"'); expect(lines[1]).toContain(`,'-1,`); expect(lines[2]).toContain(',PROJ-2,');
+    expect(svc.toCsv([report])).toContain('"Release"');
+    const plain = structuredClone(report); plain.rows[0].entries[0].description = 'Hotfix'; plain.rows[0].entries[0].workItem = 'Hotfix';
+    expect(svc.toCsv([plain]).split('\n')[1]).toContain(',Hotfix,');
+  });
   it('names files', () => {
     expect(svc.fileName('team', 'Platform Team', '2026-09', 'xlsx')).toBe('overtrack-platform-team-2026-09.xlsx');
     expect(svc.fileName('all', null, '2026-09', 'csv')).toBe('overtrack-all-2026-09.csv');
