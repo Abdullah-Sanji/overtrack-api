@@ -3,7 +3,7 @@ import { and, asc, count, eq, ilike, SQL, sql } from 'drizzle-orm';
 import { DrizzleService } from '@/database/drizzle.service';
 import { approvalChainSteps, teams, users } from '@/database/schema';
 import { DomainError, notFound } from '@/common/errors/domain-error';
-import { uniqueViolationConstraint } from '@/common/errors/pg';
+import { foreignKeyViolationConstraint, uniqueViolationConstraint } from '@/common/errors/pg';
 import { paged, parsePagination } from '@/common/pagination';
 import { toPublicUser } from '@/auth/auth.service';
 import { CreateTeamDto, ListTeamsQueryDto, UpdateTeamDto } from './teams.dto';
@@ -64,7 +64,7 @@ export class TeamsService {
       const [t] = await this.drizzle.db.insert(teams).values(dto).returning({ id: teams.id });
       return this.findById(t.id);
     } catch (err) {
-      throw this.mapUnique(err);
+      throw this.mapDbError(err);
     }
   }
 
@@ -74,7 +74,7 @@ export class TeamsService {
       if (!t) throw notFound('Team');
       return this.findById(t.id);
     } catch (err) {
-      throw this.mapUnique(err);
+      throw this.mapDbError(err);
     }
   }
 
@@ -88,8 +88,9 @@ export class TeamsService {
     return this.drizzle.db.select().from(approvalChainSteps).where(eq(approvalChainSteps.teamId, teamId)).orderBy(asc(approvalChainSteps.position));
   }
 
-  private mapUnique(err: unknown): unknown {
+  private mapDbError(err: unknown): unknown {
     if (uniqueViolationConstraint(err) === 'teams_name_unique') return new DomainError('TEAM_NAME_TAKEN', 'Team name already in use', 409);
+    if (foreignKeyViolationConstraint(err) === 'teams_tech_lead_id_users_id_fk') return new DomainError('NOT_FOUND', 'Tech lead user not found', 404);
     return err;
   }
 }
