@@ -25,10 +25,16 @@ export async function configureApp(app: NestFastifyApplication): Promise<void> {
   });
   const config = app.get(ConfigService<Env, true>);
   app.setGlobalPrefix('api/v1');
+  // @fastify/cors defaults to GET,HEAD,POST, which blocks PUT/PATCH/DELETE preflights, so list methods explicitly.
+  app.enableCors({
+    origin: config.get('CORS_ORIGIN').split(','),
+    credentials: true,
+    methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+  });
   await app.register(helmet, { contentSecurityPolicy: false });
   await app.register(cookie);
   await app.register(multipart, { limits: { fileSize: 5 * 1024 * 1024, files: 1 } });
-  app.enableCors({ origin: config.get('CORS_ORIGIN').split(','), credentials: true });
 
   if (config.get('NODE_ENV') !== 'production') {
     const doc = new DocumentBuilder().setTitle('OverTrack API').setVersion('1').addBearerAuth().build();
