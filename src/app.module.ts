@@ -10,6 +10,7 @@ import { HttpExceptionFilter } from './common/errors/http-exception.filter';
 import { DatabaseModule } from './database/database.module';
 import { HealthModule } from './health/health.module';
 import { MailModule } from './mail/mail.module';
+import { TeamsModule } from './teams/teams.module';
 import { UsersModule } from './users/users.module';
 
 @Module({
@@ -19,6 +20,7 @@ import { UsersModule } from './users/users.module';
     MailModule,
     AuthModule,
     UsersModule,
+    TeamsModule,
     HealthModule,
   ],
   providers: [
