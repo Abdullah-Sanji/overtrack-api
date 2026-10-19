@@ -6,6 +6,7 @@ services:
     healthcheck: { test: ["CMD-SHELL", "pg_isready -U overtrack"], interval: 5s, retries: 10 }
   api:
     build: .
+    restart: unless-stopped
     depends_on: { postgres: { condition: service_healthy } }
     environment:
       NODE_ENV: production
@@ -21,6 +22,7 @@ services:
     volumes: ["storage:/data/storage"]
   web:
     build: ../over-track-web
+    restart: unless-stopped
     depends_on: [api]
     ports: ["80:80"]
 volumes:
