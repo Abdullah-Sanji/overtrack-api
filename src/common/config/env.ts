@@ -14,6 +14,7 @@ export const envSchema = z.object({
   STORAGE_PATH: z.string().min(1).default('./storage'),
   TRUST_PROXY: z.string().default('false'),
   DEFAULT_TIMEZONE: z.string().min(1).default('UTC'),
+  GOOGLE_CLIENT_ID: z.string().min(1).optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

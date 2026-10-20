@@ -41,6 +41,15 @@ Deploy order for releases that change the schema: stop the old API, run migratio
 ### Reverse proxy and `TRUST_PROXY`
 The API rate-limits auth routes per client IP. Behind the `web` nginx every request arrives from the proxy, so the API must trust one hop and read the client address from `X-Forwarded-For`. `docker-compose.prod.yml` sets `TRUST_PROXY=1` for `api`; the web nginx must send `X-Forwarded-For` (`proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;`). Accepted values: `true`, `false` (default, direct exposure) or a hop count such as `1`. Do not set it when the API is reachable directly, or clients could spoof their IP.
 
+## Google sign-in
+Optional. When `GOOGLE_CLIENT_ID` is set, `POST /api/v1/auth/google` accepts a Google Identity Services credential (ID token), matches its email to an existing active user and issues the normal session. Unknown addresses get `403 GOOGLE_ACCOUNT_UNKNOWN`: there is no self sign-up. Without the variable the endpoint answers `503 GOOGLE_SIGNIN_DISABLED` and the web app shows only the password form.
+
+Setup:
+1. Google Cloud console → APIs & Services → Credentials → Create credentials → OAuth client ID, type **Web application**.
+2. Authorized JavaScript origins: every web app origin, e.g. `http://localhost:5173` for development and `https://overtrack.example.com` for production. No redirect URIs are needed for the button flow.
+3. OAuth consent screen: **Internal** restricts the button to accounts in your Google Workspace (users on other domains then use the invite + password path). **External** (published) lets any Google account use the button; the API still rejects addresses that are not users.
+4. Put the client ID in `GOOGLE_CLIENT_ID` (API) and `VITE_GOOGLE_CLIENT_ID` (web build). The client secret is not used anywhere; do not store it.
+
 ## First deploy
 1. Pick a `POSTGRES_PASSWORD` that is URL-safe (alphanumeric only): it is embedded in `DATABASE_URL`.
 2. Start the stack (migrations are applied on start; default overtime types and settings are created on first boot):

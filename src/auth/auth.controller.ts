@@ -6,7 +6,7 @@ import { Env } from '@/common/config/env';
 import { DomainError } from '@/common/errors/domain-error';
 import { AuthService } from './auth.service';
 import { TokenService } from './token.service';
-import { AcceptInviteDto, LoginDto, ResetPasswordDto } from './auth.dto';
+import { AcceptInviteDto, GoogleLoginDto, LoginDto, ResetPasswordDto } from './auth.dto';
 
 export const REFRESH_COOKIE = 'ot_refresh';
 
@@ -21,6 +21,13 @@ export class AuthController {
   @Public() @Post('auth/login') @HttpCode(200)
   async login(@Body() dto: LoginDto, @Res({ passthrough: true }) reply: FastifyReply) {
     const { accessToken, refresh, user } = await this.auth.login(dto.email, dto.password);
+    this.setRefreshCookie(reply, refresh.raw, refresh.expiresAt);
+    return { data: { accessToken, user } };
+  }
+
+  @Public() @Post('auth/google') @HttpCode(200)
+  async google(@Body() dto: GoogleLoginDto, @Res({ passthrough: true }) reply: FastifyReply) {
+    const { accessToken, refresh, user } = await this.auth.loginWithGoogle(dto.credential);
     this.setRefreshCookie(reply, refresh.raw, refresh.expiresAt);
     return { data: { accessToken, user } };
   }
