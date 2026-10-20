@@ -30,11 +30,13 @@ pnpm test                     # needs Docker (Testcontainers)
 `pnpm build` emits to `dist/` (entry `dist/main.js`). `pnpm db:migrate:prod` and `pnpm seed` run from the build output.
 
 ## Production
+The API and the web app deploy as two compose stacks that share one Docker network. This stack creates the network (`overtrack`) and must come up first; the web stack in `over-track-web/docker-compose.prod.yml` joins it as external and proxies `/api` to `api:3000`.
 ```
 POSTGRES_PASSWORD=… JWT_SECRET=… WEB_URL=https://overtrack.example.com SMTP_URL=smtp://… \
   docker compose -f docker-compose.prod.yml up -d --build
 ```
-The `web` service builds from `../over-track-web` (a separate repo) and proxies `/api` to `api:3000`.
+Nothing in this stack publishes a port: the API is reachable only through the web stack's nginx, and Postgres only from the API. Add `GOOGLE_CLIENT_ID=…` to enable Google sign-in (see below).
+Compose interpolates `${VAR}` from the shell and from the `.env` file next to the compose file, so on a server you can keep the deploy values in this repo's `.env` instead of the command line. Be aware that a development `.env` is read the same way.
 The API image applies migrations on start, then launches the server.
 Deploy order for releases that change the schema: stop the old API, run migrations (the image does this on start), start the new one. Running an old build against a migrated database fails.
 
@@ -52,10 +54,11 @@ Setup:
 
 ## First deploy
 1. Pick a `POSTGRES_PASSWORD` that is URL-safe (alphanumeric only): it is embedded in `DATABASE_URL`.
-2. Start the stack (migrations are applied on start; default overtime types and settings are created on first boot):
+2. Start this stack (migrations are applied on start; default overtime types and settings are created on first boot), then the web stack from the `over-track-web` checkout:
    ```
    POSTGRES_PASSWORD=… JWT_SECRET=… WEB_URL=https://overtrack.example.com SMTP_URL=smtp://… \
      docker compose -f docker-compose.prod.yml up -d --build
+   cd ../over-track-web && VITE_GOOGLE_CLIENT_ID=… docker compose -f docker-compose.prod.yml up -d --build
    ```
 3. Create the first admin (idempotent; password at least 10 characters):
    ```

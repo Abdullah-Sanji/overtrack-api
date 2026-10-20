@@ -1,3 +1,6 @@
+# Production API stack: Postgres + API. Creates the shared `overtrack` network that the web stack
+# (over-track-web/docker-compose.prod.yml) joins as external, so bring this stack up first.
+# Postgres stays on this project's private network only; the API is on both.
 services:
   postgres:
     image: postgres:16
@@ -11,7 +14,7 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3000
-      DATABASE_URL: postgres://overtrack:${POSTGRES_PASSWORD}@postgres:5432/overtrack
+      DATABASE_URL: postgres://overtrack:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/overtrack
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET}
       WEB_URL: ${WEB_URL:?set WEB_URL}
       CORS_ORIGIN: ${WEB_URL}
@@ -22,11 +25,10 @@ services:
       DEFAULT_TIMEZONE: ${DEFAULT_TIMEZONE:-UTC}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
     volumes: ["storage:/data/storage"]
-  web:
-    build: { context: ../over-track-web, args: { VITE_GOOGLE_CLIENT_ID: "${GOOGLE_CLIENT_ID:-}" } }
-    restart: unless-stopped
-    depends_on: [api]
-    ports: ["80:80"]
+    networks: [default, overtrack]
+networks:
+  overtrack:
+    name: overtrack
 volumes:
   pgdata:
   storage:
