@@ -79,6 +79,13 @@ pnpm import-employees ~/Downloads/employees.xlsx --admin you@example.com [--dry-
 ```
 The first sheet must have the header columns `EmployeeNumber`, `FullName`, `WorkEmail` and `Department` (other columns are ignored, order does not matter). Each row becomes a user with the Employee role, no team, no password and no invite email; the `--admin` address gets the Admin role. Names split at the first space into first and last name.
 
+In production the script runs inside the API container with the spreadsheet mounted in (the image is built from this repo, so nothing else is needed on the server):
+```
+docker compose -f docker-compose.prod.yml run --rm -v /path/to/employees.xlsx:/import/employees.xlsx:ro \
+  api node dist/database/import-employees.js /import/employees.xlsx --admin you@example.com --dry-run
+```
+Run it once with `--dry-run` to see the report, then without. If the admin already exists (for example from `create-admin`), that row is skipped and keeps its role; `--admin` must still name an address that is in the sheet.
+
 The script validates every row first (emails, duplicate emails and codes, two-word names, code and department lengths, codes already owned by other users). If anything is wrong it prints every problem with its row number and writes nothing. Re-running skips emails that already exist and never modifies them. It never deletes or deactivates anyone.
 
 Afterwards, in the admin UI: create teams, pick each team's tech lead, assign the delivery manager, CTO and finance roles, and build approval chains. `pnpm create-admin` remains the break-glass way to get a password-holding admin on any environment.
