@@ -10,6 +10,6 @@ export class RolesController {
   constructor(private readonly roles: RolesService) {}
   @Get() async list() { return { data: await this.roles.list() }; }
   @Post() @Levels('admin') async create(@CurrentUser() actor: AuthUser, @Body() dto: CreateRoleDto) { return { data: await this.roles.create(actor.id, dto) }; }
-  @Patch(':id') @Levels('admin') async update(@CurrentUser() actor: AuthUser, @Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateRoleDto) { return { data: await this.roles.update(actor, id, dto) }; }
+  @Patch(':id') @Levels('admin') async update(@CurrentUser() actor: AuthUser, @Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateRoleDto) { return { data: await this.roles.update(actor.id, id, dto) }; }
   @Delete(':id') @Levels('admin') @HttpCode(204) async remove(@CurrentUser() actor: AuthUser, @Param('id', ParseUUIDPipe) id: string) { await this.roles.remove(actor.id, id); }
 }

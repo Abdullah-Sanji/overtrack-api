@@ -1,5 +1,5 @@
 import { Db } from '@/database/drizzle.service';
-import { users, teams, roles, LEGACY_ROLE_NAMES, LegacyRole, RoleLevel, overtimeTypes, sheets, sheetEntries, approvalChainSteps } from '@/database/schema';
+import { users, teams, roles, LegacyRole, RoleLevel, overtimeTypes, sheets, sheetEntries, approvalChainSteps } from '@/database/schema';
 import { eq } from 'drizzle-orm';
 import * as argon2 from 'argon2';
 import { NestFastifyApplication } from '@nestjs/platform-fastify';
@@ -9,12 +9,11 @@ let counter = 0;
 
 const roleIds = new Map<string, string>();
 export async function systemRoleId(db: Db, legacy: LegacyRole): Promise<string> {
-  const name = LEGACY_ROLE_NAMES[legacy];
-  const cached = roleIds.get(name);
+  const cached = roleIds.get(legacy);
   if (cached) return cached;
-  const [r] = await db.select({ id: roles.id }).from(roles).where(eq(roles.name, name));
-  if (!r) throw new Error(`system role ${name} missing`);
-  roleIds.set(name, r.id);
+  const [r] = await db.select({ id: roles.id }).from(roles).where(eq(roles.systemKey, legacy));
+  if (!r) throw new Error(`system role ${legacy} missing`);
+  roleIds.set(legacy, r.id);
   return r.id;
 }
 

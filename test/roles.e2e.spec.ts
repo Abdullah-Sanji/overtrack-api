@@ -6,6 +6,8 @@ import { truncateAll } from './helpers/db';
 import { createUser, createRole, systemRoleId } from './helpers/factories';
 import { DrizzleService } from '@/database/drizzle.service';
 import { auditLog, roles } from '@/database/schema';
+import { RolesService } from '@/roles/roles.service';
+import { createAdmin } from '@/database/create-admin';
 
 describe('roles', () => {
   let app: NestFastifyApplication; let db: DrizzleService['db']; let adminToken: string; let admin: Awaited<ReturnType<typeof createUser>>;
@@ -51,7 +53,17 @@ describe('roles', () => {
     expect(level.json().code).toBe('ROLE_IS_SYSTEM');
     const del = await app.inject({ method: 'DELETE', url: `/api/v1/roles/${adminRoleId}`, headers: bearer(adminToken) });
     expect(del.json().code).toBe('ROLE_IS_SYSTEM');
-    await db.update(roles).set({ name: 'Admin' }).where(eq(roles.id, adminRoleId));
+  });
+
+  it('renaming a system role survives restarts', async () => {
+    const adminRoleId = await systemRoleId(db, 'admin');
+    const ok = await app.inject({ method: 'PATCH', url: `/api/v1/roles/${adminRoleId}`, headers: bearer(adminToken), payload: { name: 'Administrator' } });
+    expect(ok.statusCode).toBe(200);
+    const svc = app.get(RolesService); await svc.ensureSystemRoles(); await svc.ensureSystemRoles();
+    const sys = await db.select().from(roles).where(eq(roles.isSystem, true));
+    expect(sys).toHaveLength(6);
+    expect(sys.some((r) => r.name === 'Admin')).toBe(false);
+    expect(await createAdmin(app, { email: 'second@t.local', password: 'LongPassword123', firstName: 'Sec', lastName: 'Ond' })).toBe('created');
   });
 
   it('a role with users cannot be deleted', async () => {

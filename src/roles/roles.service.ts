@@ -1,13 +1,13 @@
 import { Injectable } from '@nestjs/common';
-import { asc, eq, sql } from 'drizzle-orm';
+import { asc, eq, isNotNull, sql } from 'drizzle-orm';
 import { AuditService } from '@/audit/audit.service';
 import { DomainError, notFound } from '@/common/errors/domain-error';
 import { uniqueViolationConstraint } from '@/common/errors/pg';
 import { DbOrTx, DrizzleService } from '@/database/drizzle.service';
-import { roles, RoleLevel, SYSTEM_ROLES } from '@/database/schema';
+import { roles, users, RoleLevel, SYSTEM_ROLES, SystemRoleKey } from '@/database/schema';
 import { CreateRoleDto, UpdateRoleDto } from './roles.dto';
 
-export interface RoleView { id: string; name: string; level: RoleLevel; isSystem: boolean; userCount: number; createdAt: Date; updatedAt: Date }
+export interface RoleView { id: string; name: string; level: RoleLevel; isSystem: boolean; systemKey: string | null; userCount: number; createdAt: Date; updatedAt: Date }
 
 @Injectable()
 export class RolesService {
@@ -16,20 +16,20 @@ export class RolesService {
     private readonly audit: AuditService,
   ) {}
 
-  /** Inserts the six system roles when missing (matched case-insensitively by name) and returns name → id. */
-  async ensureSystemRoles(db: DbOrTx = this.drizzle.db): Promise<Map<string, string>> {
+  /** Inserts the six system roles whose system key is missing (renamed roles are left alone) and returns systemKey → id. */
+  async ensureSystemRoles(db: DbOrTx = this.drizzle.db): Promise<Map<SystemRoleKey, string>> {
     await db
       .insert(roles)
-      .values(SYSTEM_ROLES.map((r) => ({ ...r, isSystem: true })))
-      .onConflictDoNothing();
-    const rows = await db.select({ id: roles.id, name: roles.name }).from(roles);
-    return new Map(rows.map((r) => [r.name, r.id]));
+      .values(SYSTEM_ROLES.map((r) => ({ systemKey: r.key, name: r.name, level: r.level, isSystem: true })))
+      .onConflictDoNothing({ target: roles.systemKey });
+    const rows = await db.select({ id: roles.id, systemKey: roles.systemKey }).from(roles).where(isNotNull(roles.systemKey));
+    return new Map(rows.map((r) => [r.systemKey as SystemRoleKey, r.id]));
   }
 
   private viewQuery(db: DbOrTx = this.drizzle.db) {
     return db
       .select({
-        id: roles.id, name: roles.name, level: roles.level, isSystem: roles.isSystem, createdAt: roles.createdAt, updatedAt: roles.updatedAt,
+        id: roles.id, name: roles.name, level: roles.level, isSystem: roles.isSystem, systemKey: roles.systemKey, createdAt: roles.createdAt, updatedAt: roles.updatedAt,
         userCount: sql<number>`(select count(*) from users u where u.role_id = roles.id)`.mapWith(Number),
       })
       .from(roles);
@@ -58,17 +58,18 @@ export class RolesService {
     }
   }
 
-  async update(actor: { id: string; roleId: string }, id: string, dto: UpdateRoleDto): Promise<RoleView> {
+  async update(actorId: string, id: string, dto: UpdateRoleDto): Promise<RoleView> {
     try {
       return await this.drizzle.db.transaction(async (tx) => {
         const before = await this.findById(id, tx);
         if (dto.level !== undefined && dto.level !== before.level) {
           if (before.isSystem) throw new DomainError('ROLE_IS_SYSTEM', 'The level of a system role cannot be changed', 409);
-          if (id === actor.roleId && dto.level !== 'admin') throw new DomainError('CANNOT_DEMOTE_SELF', 'You cannot remove admin level from your own role', 409);
+          const [me] = await tx.select({ roleId: users.roleId }).from(users).where(eq(users.id, actorId));
+          if (id === me?.roleId && dto.level !== 'admin') throw new DomainError('CANNOT_DEMOTE_SELF', 'You cannot remove admin level from your own role', 409);
         }
         await tx.update(roles).set({ ...dto, updatedAt: new Date() }).where(eq(roles.id, id));
         const after = await this.findById(id, tx);
-        await this.audit.record(tx, { actorId: actor.id, action: 'role.updated', entityType: 'role', entityId: id, before, after });
+        await this.audit.record(tx, { actorId, action: 'role.updated', entityType: 'role', entityId: id, before, after });
         return after;
       });
     } catch (err) {

@@ -14,7 +14,7 @@ Seeded logins (password `Password123!`): `admin@overtrack.local`, `finance@overt
 `tl.platform@overtrack.local`, `dm.platform@overtrack.local`, `emp1.platform@overtrack.local` ... `emp3.platform@overtrack.local`,
 and the same pattern for `mobile` (`tl.mobile@`, `dm.mobile@`, `emp1.mobile@` ... `emp3.mobile@`).
 Roles are data: six system roles (Employee, Tech Lead, Delivery Manager, CTO, Finance, Admin) are created on first start and
-admins can add more under Admin → Roles. A role's *level* (employee, manager, finance, admin) decides permissions.
+admins can add more under Admin → Roles. A role's *level* (employee, manager, finance, admin) decides permissions. System roles are identified by an internal key, so renaming them is safe.
 Migration 0003 drops the old `user_role` enum; back up the database before running it in production.
 
 Admins can delete users and teams that have no history (`DELETE /users/:id`, `DELETE /teams/:id`). A user with sheets,
@@ -36,6 +36,7 @@ POSTGRES_PASSWORD=… JWT_SECRET=… WEB_URL=https://overtrack.example.com SMTP_
 ```
 The `web` service builds from `../over-track-web` (a separate repo) and proxies `/api` to `api:3000`.
 The API image applies migrations on start, then launches the server.
+Deploy order for releases that change the schema: stop the old API, run migrations (the image does this on start), start the new one. Running an old build against a migrated database fails.
 
 ### Reverse proxy and `TRUST_PROXY`
 The API rate-limits auth routes per client IP. Behind the `web` nginx every request arrives from the proxy, so the API must trust one hop and read the client address from `X-Forwarded-For`. `docker-compose.prod.yml` sets `TRUST_PROXY=1` for `api`; the web nginx must send `X-Forwarded-For` (`proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;`). Accepted values: `true`, `false` (default, direct exposure) or a hop count such as `1`. Do not set it when the API is reachable directly, or clients could spoof their IP.

@@ -25,7 +25,7 @@ export async function createAdmin(app: INestApplicationContext, input: CreateAdm
   if (existing) return 'exists';
   const roleIds = await app.get(RolesService).ensureSystemRoles();
   const passwordHash = await AuthService.hashPassword(data.password);
-  await db.insert(users).values({ email: data.email, firstName: data.firstName, lastName: data.lastName, roleId: roleIds.get('Admin')!, isActive: true, passwordHash });
+  await db.insert(users).values({ email: data.email, firstName: data.firstName, lastName: data.lastName, roleId: roleIds.get('admin')!, isActive: true, passwordHash });
   return 'created';
 }
 

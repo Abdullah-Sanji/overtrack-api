@@ -29,6 +29,13 @@
       "when": 1792500100000,
       "tag": "0003_drop_user_role",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1792500200000,
+      "tag": "0004_role_system_key",
+      "breakpoints": true
     }
   ]
 }
