@@ -1,20 +1,24 @@
 import { strFromU8, unzipSync } from 'fflate';
 
+export interface SheetRow { rowNo: number; values: Record<string, string> }
+
 /**
  * Minimal .xlsx reader for header + string cells. Tolerates namespace-prefixed element names
  * (`<x:row>`, as written by .NET OpenXML libraries), which exceljs rejects. Numbers come back as
  * their raw text; dates are not converted (the importer ignores those columns).
  */
-export function readFirstSheet(file: Uint8Array): Record<string, string>[] {
+/** Data rows with their spreadsheet row number (header is row 1); fully empty rows are dropped, so numbers may have gaps. */
+export function readFirstSheet(file: Uint8Array): SheetRow[] {
   const zip = unzipSync(file);
   const text = (path: string) => (zip[path] ? strFromU8(zip[path]) : undefined);
   const sheetXml = text(firstSheetPath(zip)) ?? '';
   const shared = sharedStrings(text('xl/sharedStrings.xml') ?? '');
 
-  const rows: string[][] = [];
-  for (const row of matchAll(sheetXml, /<(?:\w+:)?row\b[^>]*>([\s\S]*?)<\/(?:\w+:)?row>/g)) {
+  const rows: Array<{ rowNo: number; cells: string[] }> = [];
+  for (const row of matchAll(sheetXml, /<(?:\w+:)?row\b([^>]*?)(?:\/>|>([\s\S]*?)<\/(?:\w+:)?row>)/g)) {
+    const rowNo = Number(/\br="(\d+)"/.exec(row[1])?.[1]) || rows.length + 1;
     const cells: string[] = [];
-    for (const c of matchAll(row[1], /<(?:\w+:)?c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/(?:\w+:)?c>)/g)) {
+    for (const c of matchAll(row[2] ?? '', /<(?:\w+:)?c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/(?:\w+:)?c>)/g)) {
       const attrs = c[1]; const inner = c[2] ?? '';
       const ref = /\br="([A-Z]+)\d+"/.exec(attrs)?.[1];
       const col = ref ? columnIndex(ref) : cells.length;
@@ -25,15 +29,15 @@ export function readFirstSheet(file: Uint8Array): Record<string, string>[] {
       else value = decode(innerText(inner, 'v'));
       cells[col] = value;
     }
-    rows.push(Array.from(cells, (v) => v ?? ''));
+    rows.push({ rowNo, cells: Array.from(cells, (v) => v ?? '') });
   }
 
-  const header = rows.shift();
+  const header = rows.shift()?.cells;
   if (!header || header.every((h) => h.trim() === '')) throw new Error('Workbook has no header row');
   const keys = header.map((h) => h.trim());
   return rows
-    .filter((r) => r.some((v) => v !== ''))
-    .map((r) => Object.fromEntries(keys.map((k, i) => [k, r[i] ?? '']).filter(([k]) => k !== '')));
+    .filter((r) => r.cells.some((v) => v.trim() !== ''))
+    .map((r) => ({ rowNo: r.rowNo, values: Object.fromEntries(keys.map((k, i) => [k, r.cells[i] ?? '']).filter(([k]) => k !== '')) }));
 }
 
 function firstSheetPath(zip: Record<string, Uint8Array>): string {

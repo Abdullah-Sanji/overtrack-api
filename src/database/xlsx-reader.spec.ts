@@ -26,24 +26,28 @@ function prefixedXlsx(): Uint8Array {
       <x:row r="1">${s('A1', 0)}${s('B1', 1)}${s('C1', 2)}</x:row>
       <x:row r="2">${s('A2', 3)}${s('B2', 4)}${s('C2', 5)}</x:row>
       <x:row r="3">${s('A3', 6)}${s('B3', 7)}<x:c r="C3" t="inlineStr"><x:is><x:t>Design</x:t></x:is></x:c></x:row>
-      <x:row r="4"><x:c r="A4"><x:v>42</x:v></x:c></x:row>
-      <x:row r="5"></x:row>
+      <x:row r="4"></x:row>
+      <x:row r="5"/>
+      <x:row r="6"><x:c r="A6"><x:v>42</x:v></x:c></x:row>
     </x:sheetData></x:worksheet>`),
   };
   return zipSync(files);
 }
 
 describe('readFirstSheet', () => {
-  it('reads a standard workbook by header name and skips fully empty rows', async () => {
-    const file = await standardXlsx([['Name', 'Email', 'Dept'], ['Ann Lee', 'ann@x.test', 'Ops'], ['Bob', 'bob@x.test', ''], ['', '', ''], ['', '', '']]);
-    expect(readFirstSheet(file)).toEqual([{ Name: 'Ann Lee', Email: 'ann@x.test', Dept: 'Ops' }, { Name: 'Bob', Email: 'bob@x.test', Dept: '' }]);
+  it('reads a standard workbook by header name, skips empty rows and keeps sheet row numbers', async () => {
+    const file = await standardXlsx([['Name', 'Email', 'Dept'], ['Ann Lee', 'ann@x.test', 'Ops'], ['', '', ''], ['Bob', 'bob@x.test', ''], ['', '', ''], ['', '', '']]);
+    expect(readFirstSheet(file)).toEqual([
+      { rowNo: 2, values: { Name: 'Ann Lee', Email: 'ann@x.test', Dept: 'Ops' } },
+      { rowNo: 4, values: { Name: 'Bob', Email: 'bob@x.test', Dept: '' } },
+    ]);
   });
 
   it('reads an x:-prefixed workbook, joining split shared-string runs and inline strings', () => {
     expect(readFirstSheet(prefixedXlsx())).toEqual([
-      { Name: 'Ann Lee', Email: 'ann@x.test', Dept: 'Ops' },
-      { Name: 'Bob', Email: 'bob@x.test', Dept: 'Design' },
-      { Name: '42', Email: '', Dept: '' },
+      { rowNo: 2, values: { Name: 'Ann Lee', Email: 'ann@x.test', Dept: 'Ops' } },
+      { rowNo: 3, values: { Name: 'Bob', Email: 'bob@x.test', Dept: 'Design' } },
+      { rowNo: 6, values: { Name: '42', Email: '', Dept: '' } },
     ]);
   });
 

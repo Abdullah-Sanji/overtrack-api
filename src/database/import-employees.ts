@@ -9,7 +9,7 @@ import { Env } from '@/common/config/env';
 import { RolesService } from '@/roles/roles.service';
 import { DrizzleService } from './drizzle.service';
 import { users } from './schema';
-import { readFirstSheet } from './xlsx-reader';
+import { readFirstSheet, SheetRow } from './xlsx-reader';
 
 export interface ImportOptions { adminEmail: string; dryRun?: boolean }
 /** Emails created / skipped; problems are human-readable lines prefixed `row N:` (sheet row, header is 1) or `file:`. */
@@ -24,11 +24,11 @@ interface Candidate { rowNo: number; email: string; firstName: string; lastName:
  * Validates every row first; writes nothing when any problem exists. Existing emails are skipped
  * untouched. Imported users get no password and no invite: they sign in with Google.
  */
-export async function importEmployees(app: INestApplicationContext, rows: Record<string, string>[], opts: ImportOptions): Promise<ImportReport> {
+export async function importEmployees(app: INestApplicationContext, rows: SheetRow[], opts: ImportOptions): Promise<ImportReport> {
   const report: ImportReport = { created: [], skipped: [], problems: [] };
   const adminEmail = opts.adminEmail.trim().toLowerCase();
 
-  const keys = Object.keys(rows[0] ?? {});
+  const keys = Object.keys(rows[0]?.values ?? {});
   const colOf = (name: string) => keys.find((k) => k.toLowerCase() === name.toLowerCase());
   const missing = REQUIRED.filter((c) => !colOf(c));
   if (missing.length) { report.problems.push(`file: missing column(s) ${missing.join(', ')}`); return report; }
@@ -36,8 +36,7 @@ export async function importEmployees(app: INestApplicationContext, rows: Record
 
   const candidates: Candidate[] = [];
   const seenEmail = new Map<string, number>(); const seenCode = new Map<string, number>();
-  rows.forEach((r, i) => {
-    const rowNo = i + 2;
+  for (const { rowNo, values: r } of rows) {
     const email = (r[col.WorkEmail] ?? '').trim().toLowerCase();
     const words = (r[col.FullName] ?? '').trim().split(/\s+/).filter(Boolean);
     const employeeCode = (r[col.EmployeeNumber] ?? '').trim();
@@ -49,10 +48,10 @@ export async function importEmployees(app: INestApplicationContext, rows: Record
       : employeeCode.length > 20 ? 'employee code longer than 20 characters'
       : department && department.length > 60 ? 'department longer than 60 characters'
       : null;
-    if (problem) { report.problems.push(`row ${rowNo}: ${problem}`); return; }
+    if (problem) { report.problems.push(`row ${rowNo}: ${problem}`); continue; }
     seenEmail.set(email, rowNo); if (employeeCode) seenCode.set(employeeCode, rowNo);
     candidates.push({ rowNo, email, firstName: words[0], lastName: words.slice(1).join(' '), employeeCode, department });
-  });
+  }
   if (!seenEmail.has(adminEmail) && !report.problems.some((p) => p.includes(`email ${adminEmail}`))) report.problems.push(`file: admin email ${adminEmail} not found in the sheet`);
 
   const db = app.get(DrizzleService).db;
@@ -98,7 +97,7 @@ if (require.main === module) {
     console.error('usage: import-employees <file.xlsx> --admin <email> [--dry-run]');
     process.exit(2);
   }
-  let rows: Record<string, string>[];
+  let rows: SheetRow[];
   try {
     rows = readFirstSheet(new Uint8Array(readFileSync(args.file)));
   } catch (err) {
