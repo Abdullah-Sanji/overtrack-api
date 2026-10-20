@@ -23,7 +23,7 @@ services:
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
     volumes: ["storage:/data/storage"]
   web:
-    build: ../over-track-web
+    build: { context: ../over-track-web, args: { VITE_GOOGLE_CLIENT_ID: "${GOOGLE_CLIENT_ID:-}" } }
     restart: unless-stopped
     depends_on: [api]
     ports: ["80:80"]
