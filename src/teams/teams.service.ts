@@ -87,6 +87,17 @@ export class TeamsService {
     }
   }
 
+  async remove(actorId: string, id: string): Promise<void> {
+    await this.drizzle.db.transaction(async (tx) => {
+      const before = await this.findById(id, tx);
+      const res = await tx.execute<{ in_use: boolean }>(sql`
+        select (exists(select 1 from users where team_id = ${id}) or exists(select 1 from sheets where team_id = ${id})) as in_use`);
+      if (res.rows[0]?.in_use) throw new DomainError('TEAM_IN_USE', 'This team still has members or sheets. Move the members first, or deactivate the team.', 409);
+      await tx.delete(teams).where(eq(teams.id, id)); // approval_chain_steps cascade
+      await this.audit.record(tx, { actorId, action: 'team.deleted', entityType: 'team', entityId: id, before });
+    });
+  }
+
   async members(id: string) {
     await this.findById(id);
     const rows = await usersWithRole(this.drizzle.db).where(and(eq(users.teamId, id), eq(users.isActive, true))).orderBy(asc(users.lastName));

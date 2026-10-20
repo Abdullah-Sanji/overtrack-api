@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
 import { CurrentUser } from '@/common/auth/current-user.decorator';
 import { AuthUser } from '@/common/auth/auth-user';
 import { Levels } from '@/common/auth/levels.decorator';
@@ -13,4 +13,5 @@ export class TeamsController {
   @Get(':id/members') async members(@Param('id', ParseUUIDPipe) id: string) { return { data: await this.teams.members(id) }; }
   @Post() @Levels('admin') async create(@CurrentUser() actor: AuthUser, @Body() dto: CreateTeamDto) { return { data: await this.teams.create(actor.id, dto) }; }
   @Patch(':id') @Levels('admin') async update(@CurrentUser() actor: AuthUser, @Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateTeamDto) { return { data: await this.teams.update(actor.id, id, dto) }; }
+  @Delete(':id') @Levels('admin') @HttpCode(204) async remove(@CurrentUser() actor: AuthUser, @Param('id', ParseUUIDPipe) id: string) { await this.teams.remove(actor.id, id); }
 }

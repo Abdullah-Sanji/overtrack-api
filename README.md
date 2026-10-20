@@ -17,6 +17,10 @@ Roles are data: six system roles (Employee, Tech Lead, Delivery Manager, CTO, Fi
 admins can add more under Admin → Roles. A role's *level* (employee, manager, finance, admin) decides permissions.
 Migration 0003 drops the old `user_role` enum; back up the database before running it in production.
 
+Admins can delete users and teams that have no history (`DELETE /users/:id`, `DELETE /teams/:id`). A user with sheets,
+approvals, chain membership or audit entries returns 409 `USER_HAS_HISTORY`: deactivate them instead. A team with members or
+sheets returns 409 `TEAM_IN_USE`.
+
 ## Test
 ```
 pnpm test                     # needs Docker (Testcontainers)
