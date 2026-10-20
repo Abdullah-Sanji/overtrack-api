@@ -20,6 +20,7 @@ export const users = pgTable(
   {
     id: uuid('id').primaryKey().defaultRandom(),
     employeeCode: text('employee_code'),
+    department: text('department'),
     firstName: text('first_name').notNull(),
     lastName: text('last_name').notNull(),
     email: text('email').notNull(),

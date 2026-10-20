@@ -36,6 +36,13 @@
       "when": 1792500200000,
       "tag": "0004_role_system_key",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1792500300000,
+      "tag": "0005_user_department",
+      "breakpoints": true
     }
   ]
 }

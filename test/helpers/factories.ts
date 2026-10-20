@@ -23,7 +23,7 @@ export async function createRole(db: Db, o: Partial<{ name: string; level: RoleL
   return r;
 }
 
-export async function createUser(db: Db, o: Partial<{ email: string; password: string; role: LegacyRole; roleId: string; teamId: string | null; firstName: string; lastName: string; isActive: boolean; employeeCode: string }> = {}) {
+export async function createUser(db: Db, o: Partial<{ email: string; password: string; role: LegacyRole; roleId: string; teamId: string | null; firstName: string; lastName: string; isActive: boolean; employeeCode: string; department: string | null }> = {}) {
   counter += 1;
   const password = o.password ?? 'Password123!';
   const [u] = await db.insert(users).values({
@@ -35,6 +35,7 @@ export async function createUser(db: Db, o: Partial<{ email: string; password: s
     teamId: o.teamId ?? null,
     isActive: o.isActive ?? true,
     employeeCode: o.employeeCode ?? `E${1000 + counter}`,
+    department: o.department ?? null,
   }).returning();
   return { ...u, password };
 }

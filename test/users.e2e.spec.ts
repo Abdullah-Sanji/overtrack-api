@@ -58,6 +58,23 @@ describe('users', () => {
     expect(res.json().data[0]).not.toHaveProperty('passwordHash');
   });
 
+  it('stores department on create, clears it on PATCH with empty string, filters case-insensitively', async () => {
+    const roleId = await systemRoleId(db, 'employee');
+    const res = await app.inject({ method: 'POST', url: '/api/v1/users', headers: bearer(adminToken), payload: { firstName: 'Dee', lastName: 'P', email: 'dee@t.local', roleId, department: ' Engineering ' } });
+    expect(res.statusCode).toBe(201); expect(res.json().data.department).toBe('Engineering');
+    await createUser(db, { email: 'eng2@t.local', department: 'engineering' }); await createUser(db, { email: 'des@t.local', department: 'Design' });
+    const list = await app.inject({ method: 'GET', url: '/api/v1/users?department=ENGINEERING', headers: bearer(adminToken) });
+    expect(list.json().data.map((u: { email: string }) => u.email).sort()).toEqual(['dee@t.local', 'eng2@t.local']);
+    const cleared = await app.inject({ method: 'PATCH', url: `/api/v1/users/${res.json().data.id}`, headers: bearer(adminToken), payload: { department: '' } });
+    expect(cleared.statusCode).toBe(200); expect(cleared.json().data.department).toBeNull();
+  });
+
+  it('lists distinct departments, de-duplicated case-insensitively and sorted', async () => {
+    await createUser(db, { department: 'engineering' }); await createUser(db, { department: 'Engineering' }); await createUser(db, { department: 'Design' }); await createUser(db);
+    const res = await app.inject({ method: 'GET', url: '/api/v1/users/departments', headers: bearer(adminToken) });
+    expect(res.statusCode).toBe(200); expect(res.json().data.map((s: string) => s.toLowerCase())).toEqual(['design', 'engineering']);
+  });
+
   it('deactivate blocks login; reactivate restores it', async () => {
     const u = await createUser(db);
     const sess = await login(app, u.email, u.password);

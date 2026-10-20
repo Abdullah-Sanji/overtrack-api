@@ -53,6 +53,7 @@ export class UsersService {
     if (q.search) where.push(or(ilike(users.firstName, `%${q.search}%`), ilike(users.lastName, `%${q.search}%`), ilike(users.email, `%${q.search}%`))!);
     if (q.roleId) where.push(eq(users.roleId, q.roleId));
     if (q.teamId) where.push(eq(users.teamId, q.teamId));
+    if (q.department) where.push(sql`lower(${users.department}) = lower(${q.department})`);
     if (q.isActive !== undefined) where.push(eq(users.isActive, q.isActive));
     const cond = where.length ? and(...where) : undefined;
     const [rows, [{ total }]] = await Promise.all([
@@ -60,6 +61,12 @@ export class UsersService {
       this.drizzle.db.select({ total: count() }).from(users).where(cond),
     ]);
     return paged(rows.map(toPublicUser), Number(total), p);
+  }
+
+  /** Distinct departments, de-duplicated case-insensitively (which casing wins within a group is unspecified). */
+  async departments(): Promise<string[]> {
+    const res = await this.drizzle.db.execute<{ d: string }>(sql`select min(department) as d from users where department is not null group by lower(department) order by lower(min(department))`);
+    return res.rows.map((r) => r.d);
   }
 
   async directory(search?: string) {

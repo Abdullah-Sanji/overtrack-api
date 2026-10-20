@@ -11,6 +11,7 @@ export class UsersController {
   constructor(private readonly users: UsersService) {}
 
   @Get() list(@Query() q: ListUsersQueryDto) { return this.users.list(q); }
+  @Get('departments') async departments() { return { data: await this.users.departments() }; }
   @Post() async create(@CurrentUser() actor: AuthUser, @Body() dto: CreateUserDto) { return { data: await this.users.create(actor.id, dto) }; }
   @Get(':id') async get(@Param('id', ParseUUIDPipe) id: string) { return { data: await this.users.findById(id) }; }
   @Patch(':id') async update(@CurrentUser() actor: AuthUser, @Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateUserDto) { return { data: await this.users.update(actor.id, id, dto) }; }
