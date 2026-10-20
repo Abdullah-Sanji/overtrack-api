@@ -66,3 +66,16 @@ Setup:
    It prints `admin created: <email>` or `admin exists: <email>`.
 
 `pnpm seed` loads demo data and refuses to run when `NODE_ENV=production`. Locally, `pnpm create-admin` does the same as step 3 using the `ADMIN_*` variables from the environment.
+
+### Internal rollout from an HR export
+When every employee already has a Google account (see "Google sign-in"), skip `create-admin` and the demo seed and load everyone from the HR spreadsheet instead:
+```
+docker compose down -v && docker compose up -d      # fresh local database; in production use the stack above
+pnpm db:migrate
+pnpm import-employees ~/Downloads/employees.xlsx --admin you@example.com [--dry-run]
+```
+The first sheet must have the header columns `EmployeeNumber`, `FullName`, `WorkEmail` and `Department` (other columns are ignored, order does not matter). Each row becomes a user with the Employee role, no team, no password and no invite email; the `--admin` address gets the Admin role. Names split at the first space into first and last name.
+
+The script validates every row first (emails, duplicate emails and codes, two-word names, code and department lengths, codes already owned by other users). If anything is wrong it prints every problem with its row number and writes nothing. Re-running skips emails that already exist and never modifies them. It never deletes or deactivates anyone.
+
+Afterwards, in the admin UI: create teams, pick each team's tech lead, assign the delivery manager, CTO and finance roles, and build approval chains. `pnpm create-admin` remains the break-glass way to get a password-holding admin on any environment.

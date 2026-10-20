@@ -12,6 +12,7 @@
     "db:migrate": "tsx src/database/migrate.ts",
     "create-admin": "nest build && node dist/database/create-admin.js",
     "seed": "nest build && node dist/database/seed.js",
+    "import-employees": "nest build && node dist/database/import-employees.js",
     "db:migrate:prod": "node dist/database/migrate.js"
   },
   "devEngines": {
