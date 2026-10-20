@@ -35,7 +35,7 @@ export class WorkflowService {
 
       const result = transition(
         { id: row.id, employeeId: row.employeeId, status: row.status, round: row.round, currentStepPosition: row.currentStepPosition, submittedAt: row.submittedAt, entryCount: Number(entryCount) },
-        steps, { id: actor.id, role: actor.role }, effective, now,
+        steps, { id: actor.id, level: actor.level }, effective, now,
       );
 
       if (action.type === 'submit') {

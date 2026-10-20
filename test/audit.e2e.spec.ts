@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { createTestApp, login, bearer } from './helpers/app';
 import { truncateAll } from './helpers/db';
-import { createUser } from './helpers/factories';
+import { createUser, systemRoleId } from './helpers/factories';
 import { DrizzleService } from '@/database/drizzle.service';
 
 describe('audit', () => {
@@ -26,7 +26,7 @@ describe('audit', () => {
   });
 
   it('audits user and overtime type changes without leaking password hashes', async () => {
-    const u = await app.inject({ method: 'POST', url: '/api/v1/users', headers: bearer(adminToken), payload: { firstName: 'Nora', lastName: 'K', email: 'nora@t.local', role: 'employee' } });
+    const u = await app.inject({ method: 'POST', url: '/api/v1/users', headers: bearer(adminToken), payload: { firstName: 'Nora', lastName: 'K', email: 'nora@t.local', roleId: await systemRoleId(db, 'employee') } });
     const uid = u.json().data.id;
     await app.inject({ method: 'POST', url: `/api/v1/users/${uid}/deactivate`, headers: bearer(adminToken) });
     await app.inject({ method: 'POST', url: `/api/v1/users/${uid}/reactivate`, headers: bearer(adminToken) });

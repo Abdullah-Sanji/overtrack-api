@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { and, eq, or } from 'drizzle-orm';
 import { DrizzleService } from '@/database/drizzle.service';
 import { approvalChainSteps, sheetApprovalSteps, teams } from '@/database/schema';
-import { AuthUser } from '@/common/auth/auth-user';
+import { AuthUser, isFinanceOrAdmin } from '@/common/auth/auth-user';
 
 @Injectable()
 export class VisibilityService {
@@ -10,7 +10,7 @@ export class VisibilityService {
 
   /** Teams the actor may see consolidated data for. */
   async visibleTeamIds(actor: AuthUser): Promise<string[] | 'all'> {
-    if (actor.role === 'admin' || actor.role === 'finance') return 'all';
+    if (isFinanceOrAdmin(actor)) return 'all';
     const db = this.drizzle.db;
     const [led, onChain] = await Promise.all([
       db.select({ id: teams.id }).from(teams).where(eq(teams.techLeadId, actor.id)),

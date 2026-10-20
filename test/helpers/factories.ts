@@ -32,7 +32,6 @@ export async function createUser(db: Db, o: Partial<{ email: string; password: s
     lastName: o.lastName ?? 'Test',
     email: o.email ?? `user${counter}@test.local`,
     passwordHash: await argon2.hash(password, { type: argon2.argon2id }),
-    role: o.role ?? 'employee',
     roleId: o.roleId ?? (await systemRoleId(db, o.role ?? 'employee')),
     teamId: o.teamId ?? null,
     isActive: o.isActive ?? true,

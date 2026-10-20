@@ -11,7 +11,7 @@ import { RolesModule } from './roles/roles.module';
 import { BootstrapModule } from './bootstrap/bootstrap.module';
 import { AuthModule } from './auth/auth.module';
 import { JwtAuthGuard } from './common/auth/jwt-auth.guard';
-import { RolesGuard } from './common/auth/roles.guard';
+import { LevelsGuard } from './common/auth/levels.guard';
 import { validateEnv } from './common/config/env';
 import { HttpExceptionFilter } from './common/errors/http-exception.filter';
 import { DatabaseModule } from './database/database.module';
@@ -51,7 +51,7 @@ import { WorkflowModule } from './workflow/workflow.module';
     { provide: APP_PIPE, useClass: ZodValidationPipe },
     { provide: APP_FILTER, useClass: HttpExceptionFilter },
     { provide: APP_GUARD, useClass: JwtAuthGuard },
-    { provide: APP_GUARD, useClass: RolesGuard },
+    { provide: APP_GUARD, useClass: LevelsGuard },
   ],
 })
 export class AppModule {}

@@ -1,5 +1,4 @@
 import { pgTable, uuid, text, boolean, timestamp, uniqueIndex, index, AnyPgColumn } from 'drizzle-orm/pg-core';
-import { userRoleEnum } from './enums';
 import { roles } from './roles';
 
 const timestamps = {
@@ -25,7 +24,6 @@ export const users = pgTable(
     lastName: text('last_name').notNull(),
     email: text('email').notNull(),
     passwordHash: text('password_hash'),
-    role: userRoleEnum('role').notNull().default('employee'),
     roleId: uuid('role_id').notNull().references(() => roles.id),
     teamId: uuid('team_id').references(() => teams.id),
     timezone: text('timezone').notNull().default('UTC'),

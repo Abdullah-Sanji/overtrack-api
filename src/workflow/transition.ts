@@ -1,8 +1,8 @@
-import { ApprovalStepStatus, SheetStatus, UserRole } from '@/database/schema';
+import { ApprovalStepStatus, SheetStatus, RoleLevel } from '@/database/schema';
 import { DomainError, forbidden } from '@/common/errors/domain-error';
 import type { ChainStepInput } from '@/approval-chains/approval-chains.service';
 
-export type Actor = { id: string; role: UserRole };
+export type Actor = { id: string; level: RoleLevel };
 export interface TSheet { id: string; employeeId: string; status: SheetStatus; round: number; currentStepPosition: number | null; submittedAt: Date | null; entryCount: number }
 export interface TStep { position: number; label: string; approverId: string; backupApproverId: string | null; status: ApprovalStepStatus }
 export type Action =
@@ -27,7 +27,7 @@ const needReason = (what: string) => new DomainError('REASON_REQUIRED', `${what}
 const base = (): TransitionResult => ({ patch: {}, insertSteps: [], updateSteps: [], deleteCurrentRoundSteps: false, auditAction: '', reason: null, events: [] });
 const ev = (name: WorkflowEventName, sheet: TSheet, actor: Actor, approverIds: string[], reason?: string): WorkflowEvent => ({ name, payload: { sheetId: sheet.id, employeeId: sheet.employeeId, approverIds, actorId: actor.id, ...(reason ? { reason } : {}) } });
 const approversOf = (s: TStep, employeeId: string) => [s.approverId, s.backupApproverId].filter((id): id is string => id !== null && id !== employeeId);
-const isFinance = (a: Actor) => a.role === 'finance' || a.role === 'admin';
+const isFinance = (a: Actor) => a.level === 'finance' || a.level === 'admin';
 
 export function transition(sheet: TSheet, steps: TStep[], actor: Actor, action: Action, now: Date): TransitionResult {
   switch (action.type) {
@@ -81,7 +81,7 @@ function decide(sheet: TSheet, steps: TStep[], actor: Actor, d: { kind: 'approve
   const current = steps.find((s) => s.position === sheet.currentStepPosition && s.status === 'pending');
   if (!current) throw invalid('Sheet has no pending step');
   if (actor.id === sheet.employeeId) throw new DomainError('NOT_CURRENT_APPROVER', 'You cannot decide on your own sheet', 403);
-  const isAdmin = actor.role === 'admin';
+  const isAdmin = actor.level === 'admin';
   const named = approversOf(current, sheet.employeeId).includes(actor.id);
   if (!named && !isAdmin) throw new DomainError('NOT_CURRENT_APPROVER', 'You are not the approver for the current step', 403);
   if (!named && isAdmin && !d.overrideReason?.trim()) throw needReason('Admin override');
@@ -111,7 +111,7 @@ function decide(sheet: TSheet, steps: TStep[], actor: Actor, d: { kind: 'approve
 }
 
 function reopen(sheet: TSheet, actor: Actor, reason: string): TransitionResult {
-  if (actor.role !== 'admin') throw forbidden('Only admins can reopen sheets');
+  if (actor.level !== 'admin') throw forbidden('Only admins can reopen sheets');
   if (sheet.status !== 'approved') throw invalid(`Cannot reopen a ${sheet.status} sheet`);
   if (!reason?.trim()) throw needReason('Reopen');
   const r = base();

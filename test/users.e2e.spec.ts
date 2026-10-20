@@ -3,7 +3,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { createTestApp, login, bearer } from './helpers/app';
 import { truncateAll } from './helpers/db';
-import { createUser, createTeam } from './helpers/factories';
+import { createUser, createTeam, systemRoleId } from './helpers/factories';
 import { DrizzleService } from '@/database/drizzle.service';
 import { MailService } from '@/mail/mail.service';
 
@@ -21,7 +21,7 @@ describe('users', () => {
   it('admin creates a user, which sends an invite that can be accepted', async () => {
     const team = await createTeam(db);
     const res = await app.inject({ method: 'POST', url: '/api/v1/users', headers: bearer(adminToken),
-      payload: { firstName: 'Nora', lastName: 'K', email: 'Nora@T.local', role: 'employee', teamId: team.id, employeeCode: 'E42' } });
+      payload: { firstName: 'Nora', lastName: 'K', email: 'Nora@T.local', roleId: await systemRoleId(db, 'employee'), teamId: team.id, employeeCode: 'E42' } });
     expect(res.statusCode).toBe(201);
     expect(res.json().data.email).toBe('nora@t.local');
     expect(mail.sent).toHaveLength(1);
@@ -36,7 +36,7 @@ describe('users', () => {
 
   it('rejects duplicate email with EMAIL_TAKEN', async () => {
     await createUser(db, { email: 'dup@t.local' });
-    const res = await app.inject({ method: 'POST', url: '/api/v1/users', headers: bearer(adminToken), payload: { firstName: 'A', lastName: 'B', email: 'dup@t.local', role: 'employee' } });
+    const res = await app.inject({ method: 'POST', url: '/api/v1/users', headers: bearer(adminToken), payload: { firstName: 'A', lastName: 'B', email: 'dup@t.local', roleId: await systemRoleId(db, 'employee') } });
     expect(res.statusCode).toBe(409);
     expect(res.json().code).toBe('EMAIL_TAKEN');
   });
@@ -91,7 +91,7 @@ describe('users', () => {
 
   it('returns 404 NOT_FOUND when the team does not exist', async () => {
     const res = await app.inject({ method: 'POST', url: '/api/v1/users', headers: bearer(adminToken),
-      payload: { firstName: 'Lost', lastName: 'T', email: 'lost@t.local', role: 'employee', teamId: randomUUID() } });
+      payload: { firstName: 'Lost', lastName: 'T', email: 'lost@t.local', roleId: await systemRoleId(db, 'employee'), teamId: randomUUID() } });
     expect(res.statusCode).toBe(404);
     expect(res.json().code).toBe('NOT_FOUND');
   });
@@ -108,7 +108,7 @@ describe('users', () => {
       expect(data.map((u) => u.id).sort()).toEqual([admin.id, emp.id, mgr.id].sort());
       expect(data.map((u) => u.id)).not.toContain(gone.id);
       for (const u of data) expect(Object.keys(u).sort()).toEqual(['firstName', 'id', 'lastName', 'role', 'teamId']);
-      expect(data.find((u) => u.id === mgr.id)).toMatchObject({ firstName: 'Mia', lastName: 'Boss', role: 'delivery_manager', teamId: null });
+      expect(data.find((u) => u.id === mgr.id)).toMatchObject({ firstName: 'Mia', lastName: 'Boss', role: { name: 'Delivery Manager', level: 'manager' }, teamId: null });
       const adminRes = await app.inject({ method: 'GET', url: '/api/v1/users/directory', headers: bearer(adminToken) });
       expect(adminRes.statusCode).toBe(200);
       expect(adminRes.json().data).toHaveLength(3);

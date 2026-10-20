@@ -1,5 +1,5 @@
-import { UserRole } from '@/database/schema';
-export interface AuthUser { id: string; role: UserRole; teamId: string | null }
-export const ADMIN: UserRole[] = ['admin'];
-export const FINANCE_OR_ADMIN: UserRole[] = ['finance', 'admin'];
-export const MANAGER_ROLES: UserRole[] = ['tech_lead', 'delivery_manager', 'cto', 'finance', 'admin'];
+import { RoleLevel } from '@/database/schema';
+export interface AuthUser { id: string; roleId: string; level: RoleLevel; teamId: string | null }
+export const MANAGER_LEVELS: RoleLevel[] = ['manager', 'finance', 'admin'];
+export const isAdmin = (u: Pick<AuthUser, 'level'>) => u.level === 'admin';
+export const isFinanceOrAdmin = (u: Pick<AuthUser, 'level'>) => u.level === 'finance' || u.level === 'admin';

@@ -3,12 +3,12 @@ import { transition, TSheet, TStep, Actor } from './transition';
 import { DomainError } from '@/common/errors/domain-error';
 
 const NOW = new Date('2026-10-05T10:00:00Z');
-const emp: Actor = { id: 'emp', role: 'employee' };
-const tl: Actor = { id: 'tl', role: 'tech_lead' };
-const dm: Actor = { id: 'dm', role: 'delivery_manager' };
-const cto: Actor = { id: 'cto', role: 'cto' };
-const admin: Actor = { id: 'admin', role: 'admin' };
-const fin: Actor = { id: 'fin', role: 'finance' };
+const emp: Actor = { id: 'emp', level: 'employee' };
+const tl: Actor = { id: 'tl', level: 'manager' };
+const dm: Actor = { id: 'dm', level: 'manager' };
+const cto: Actor = { id: 'cto', level: 'manager' };
+const admin: Actor = { id: 'admin', level: 'admin' };
+const fin: Actor = { id: 'fin', level: 'finance' };
 const chain = [
   { position: 1, label: 'TL', approverId: 'tl', backupApproverId: 'dm' },
   { position: 2, label: 'DM', approverId: 'dm', backupApproverId: null },

@@ -18,7 +18,7 @@ describe('auth', () => {
     const u = await createUser(db, { email: 'a@t.local', password: 'Password123!' });
     const res = await app.inject({ method: 'POST', url: '/api/v1/auth/login', payload: { email: 'a@t.local', password: 'Password123!' } });
     expect(res.statusCode).toBe(200);
-    expect(res.json().data.user).toMatchObject({ id: u.id, email: 'a@t.local', role: 'employee' });
+    expect(res.json().data.user).toMatchObject({ id: u.id, email: 'a@t.local', role: { name: 'Employee', level: 'employee' } });
     expect(res.json().data.accessToken).toBeTypeOf('string');
     const cookie = res.cookies.find((c) => c.name === 'ot_refresh');
     expect(cookie?.httpOnly).toBe(true);
@@ -86,7 +86,7 @@ describe('auth', () => {
     expect((await attempt()).statusCode).toBe(429);
   });
 
-  it('enforces @Roles on admin routes', async () => {
+  it('enforces @Levels on admin routes', async () => {
     const u = await createUser(db, { role: 'employee' });
     const { accessToken } = await login(app, u.email, u.password);
     const res = await app.inject({ method: 'GET', url: '/api/v1/users', headers: bearer(accessToken) });

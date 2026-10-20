@@ -4,7 +4,8 @@ import { JwtService } from '@nestjs/jwt';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { and, eq, isNull } from 'drizzle-orm';
 import { DbOrTx, DrizzleService } from '@/database/drizzle.service';
-import { refreshTokens, passwordTokens, users } from '@/database/schema';
+import { refreshTokens, passwordTokens, users, RoleLevel } from '@/database/schema';
+import { usersWithRole, UserWithRole } from '@/users/public-user';
 import { Env } from '@/common/config/env';
 import { DomainError } from '@/common/errors/domain-error';
 
@@ -14,8 +15,8 @@ const sha256 = (s: string) => createHash('sha256').update(s).digest('hex');
 export class TokenService {
   constructor(private readonly drizzle: DrizzleService, private readonly jwt: JwtService, private readonly config: ConfigService<Env, true>) {}
 
-  issueAccessToken(user: { id: string; role: string; teamId: string | null }): Promise<string> {
-    return this.jwt.signAsync({ sub: user.id, role: user.role, teamId: user.teamId }, { expiresIn: this.config.get('JWT_ACCESS_TTL_SECONDS') });
+  issueAccessToken(user: { id: string; roleId: string; level: RoleLevel; teamId: string | null }): Promise<string> {
+    return this.jwt.signAsync({ sub: user.id, roleId: user.roleId, level: user.level, teamId: user.teamId }, { expiresIn: this.config.get('JWT_ACCESS_TTL_SECONDS') });
   }
 
   async createRefreshToken(userId: string, familyId: string = randomUUID(), executor?: DbOrTx, absoluteExpiresAt?: Date): Promise<{ raw: string; expiresAt: Date; id: string }> {
@@ -27,7 +28,7 @@ export class TokenService {
   }
 
   /** Rotates: revokes the presented token and issues a new one in the same family. Reuse of a revoked token kills the family. */
-  async rotateRefreshToken(raw: string): Promise<{ raw: string; expiresAt: Date; user: typeof users.$inferSelect }> {
+  async rotateRefreshToken(raw: string): Promise<{ raw: string; expiresAt: Date; user: UserWithRole }> {
     const db = this.drizzle.db;
     const [row] = await db.select().from(refreshTokens).where(eq(refreshTokens.tokenHash, sha256(raw)));
     if (!row) throw new DomainError('TOKEN_INVALID', 'Unknown refresh token', 401);
@@ -36,8 +37,8 @@ export class TokenService {
       throw new DomainError('TOKEN_REUSED', 'Refresh token reuse detected', 401);
     }
     if (row.expiresAt < new Date()) throw new DomainError('TOKEN_EXPIRED', 'Refresh token expired', 401);
-    const [user] = await db.select().from(users).where(eq(users.id, row.userId));
-    if (!user || !user.isActive) throw new DomainError('USER_INACTIVE', 'User is inactive', 401);
+    const [user] = await usersWithRole(db).where(eq(users.id, row.userId));
+    if (!user || !user.user.isActive) throw new DomainError('USER_INACTIVE', 'User is inactive', 401);
     // Claim the old token atomically; only one concurrent caller can win.
     const next = await db.transaction(async (tx) => {
       const claimed = await tx.update(refreshTokens).set({ revokedAt: new Date() })

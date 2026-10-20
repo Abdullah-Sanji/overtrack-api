@@ -19,7 +19,7 @@ export class InboxService {
     let cond: SQL;
     if (scope === 'waiting') {
       const current = and(eq(sheets.status, 'submitted'), sameRound, eq(sheetApprovalSteps.position, sheets.currentStepPosition))!;
-      cond = actor.role === 'admin' ? current : and(current, mine)!;
+      cond = actor.level === 'admin' ? current : and(current, mine)!;
     } else if (scope === 'upcoming') {
       cond = and(eq(sheets.status, 'submitted'), sameRound, eq(sheetApprovalSteps.status, 'pending'), gt(sheetApprovalSteps.position, sheets.currentStepPosition), mine)!;
     } else {

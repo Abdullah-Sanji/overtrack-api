@@ -1,9 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as argon2 from 'argon2';
-import { and, asc, count, eq, ilike, or, sql, SQL } from 'drizzle-orm';
+import { and, asc, count, eq, ilike, or, SQL } from 'drizzle-orm';
 import { DrizzleService } from '@/database/drizzle.service';
-import { users, LEGACY_ROLE_NAMES } from '@/database/schema';
+import { users, roles, RoleLevel } from '@/database/schema';
 import { DomainError, notFound } from '@/common/errors/domain-error';
 import { foreignKeyViolationConstraint, uniqueViolationConstraint } from '@/common/errors/pg';
 import { paged, parsePagination } from '@/common/pagination';
@@ -12,7 +12,8 @@ import { AuditService } from '@/audit/audit.service';
 import { MailService } from '@/mail/mail.service';
 import { inviteEmail, resetEmail } from '@/mail/templates';
 import { TokenService } from '@/auth/token.service';
-import { AuthService, PublicUser, toPublicUser } from '@/auth/auth.service';
+import { AuthService } from '@/auth/auth.service';
+import { PublicUser, UserWithRole, roleRef, toPublicUser, usersWithRole } from './public-user';
 import { CreateUserDto, ListUsersQueryDto, UpdateUserDto } from './users.dto';
 
 @Injectable()
@@ -20,21 +21,21 @@ export class UsersService {
   constructor(private readonly drizzle: DrizzleService, private readonly tokens: TokenService, private readonly mail: MailService, private readonly config: ConfigService<Env, true>, private readonly audit: AuditService) {}
 
   async findById(id: string): Promise<PublicUser> {
-    const [u] = await this.drizzle.db.select().from(users).where(eq(users.id, id));
-    if (!u) throw notFound('User');
-    return toPublicUser(u);
+    const [row] = await usersWithRole(this.drizzle.db).where(eq(users.id, id));
+    if (!row) throw notFound('User');
+    return toPublicUser(row);
   }
 
   async list(q: ListUsersQueryDto) {
     const p = parsePagination(q);
     const where: SQL[] = [];
     if (q.search) where.push(or(ilike(users.firstName, `%${q.search}%`), ilike(users.lastName, `%${q.search}%`), ilike(users.email, `%${q.search}%`))!);
-    if (q.role) where.push(eq(users.role, q.role));
+    if (q.roleId) where.push(eq(users.roleId, q.roleId));
     if (q.teamId) where.push(eq(users.teamId, q.teamId));
     if (q.isActive !== undefined) where.push(eq(users.isActive, q.isActive));
     const cond = where.length ? and(...where) : undefined;
     const [rows, [{ total }]] = await Promise.all([
-      this.drizzle.db.select().from(users).where(cond).orderBy(asc(users.lastName), asc(users.firstName)).limit(p.limit).offset(p.offset),
+      usersWithRole(this.drizzle.db).where(cond).orderBy(asc(users.lastName), asc(users.firstName)).limit(p.limit).offset(p.offset),
       this.drizzle.db.select({ total: count() }).from(users).where(cond),
     ]);
     return paged(rows.map(toPublicUser), Number(total), p);
@@ -44,34 +45,36 @@ export class UsersService {
     const where: SQL[] = [eq(users.isActive, true)];
     if (search) where.push(or(ilike(users.firstName, `%${search}%`), ilike(users.lastName, `%${search}%`))!);
     return this.drizzle.db
-      .select({ id: users.id, firstName: users.firstName, lastName: users.lastName, teamId: users.teamId, role: users.role })
-      .from(users).where(and(...where)).orderBy(asc(users.lastName), asc(users.firstName)).limit(200);
+      .select({ id: users.id, firstName: users.firstName, lastName: users.lastName, teamId: users.teamId, role: roleRef })
+      .from(users).innerJoin(roles, eq(roles.id, users.roleId)).where(and(...where)).orderBy(asc(users.lastName), asc(users.firstName)).limit(200);
   }
 
   async create(actorId: string, dto: CreateUserDto): Promise<PublicUser> {
     const email = dto.email.toLowerCase();
-    let u: typeof users.$inferSelect;
+    let created: UserWithRole;
     try {
-      u = await this.drizzle.db.transaction(async (tx) => {
-        const [row] = await tx.insert(users).values({ ...dto, roleId: sql`(select id from roles where name = ${LEGACY_ROLE_NAMES[dto.role]})`, email, timezone: dto.timezone ?? this.config.get('DEFAULT_TIMEZONE') }).returning();
-        await this.audit.record(tx, { actorId, action: 'user.created', entityType: 'user', entityId: row.id, after: toPublicUser(row) });
+      created = await this.drizzle.db.transaction(async (tx) => {
+        const [{ id }] = await tx.insert(users).values({ ...dto, email, timezone: dto.timezone ?? this.config.get('DEFAULT_TIMEZONE') }).returning({ id: users.id });
+        const [row] = await usersWithRole(tx).where(eq(users.id, id));
+        await this.audit.record(tx, { actorId, action: 'user.created', entityType: 'user', entityId: id, after: toPublicUser(row) });
         return row;
       });
     } catch (err) {
       throw this.mapDbError(err);
     }
-    await this.sendInvite(u);
-    return toPublicUser(u);
+    await this.sendInvite(created.user);
+    return toPublicUser(created);
   }
 
   async update(actorId: string, id: string, dto: UpdateUserDto): Promise<PublicUser> {
     try {
       return await this.drizzle.db.transaction(async (tx) => {
-        const [before] = await tx.select().from(users).where(eq(users.id, id));
+        const [before] = await usersWithRole(tx).where(eq(users.id, id));
         if (!before) throw notFound('User');
-        const [u] = await tx.update(users).set({ ...dto, updatedAt: new Date() }).where(eq(users.id, id)).returning();
-        await this.audit.record(tx, { actorId, action: 'user.updated', entityType: 'user', entityId: id, before: toPublicUser(before), after: toPublicUser(u) });
-        return toPublicUser(u);
+        await tx.update(users).set({ ...dto, updatedAt: new Date() }).where(eq(users.id, id));
+        const [after] = await usersWithRole(tx).where(eq(users.id, id));
+        await this.audit.record(tx, { actorId, action: 'user.updated', entityType: 'user', entityId: id, before: toPublicUser(before), after: toPublicUser(after) });
+        return toPublicUser(after);
       });
     } catch (err) {
       throw this.mapDbError(err);
@@ -80,23 +83,25 @@ export class UsersService {
 
   async setActive(actorId: string, id: string, isActive: boolean): Promise<PublicUser> {
     return this.drizzle.db.transaction(async (tx) => {
-      const [before] = await tx.select().from(users).where(eq(users.id, id));
+      const [before] = await usersWithRole(tx).where(eq(users.id, id));
       if (!before) throw notFound('User');
-      const [u] = await tx.update(users).set({ isActive, updatedAt: new Date() }).where(eq(users.id, id)).returning();
+      await tx.update(users).set({ isActive, updatedAt: new Date() }).where(eq(users.id, id));
+      const [after] = await usersWithRole(tx).where(eq(users.id, id));
       if (!isActive) await this.tokens.revokeAllForUser(id, tx);
-      await this.audit.record(tx, { actorId, action: isActive ? 'user.reactivated' : 'user.deactivated', entityType: 'user', entityId: id, before: toPublicUser(before), after: toPublicUser(u) });
-      return toPublicUser(u);
+      await this.audit.record(tx, { actorId, action: isActive ? 'user.reactivated' : 'user.deactivated', entityType: 'user', entityId: id, before: toPublicUser(before), after: toPublicUser(after) });
+      return toPublicUser(after);
     });
   }
 
   async resendInvite(id: string): Promise<void> {
-    const [u] = await this.drizzle.db.select().from(users).where(eq(users.id, id));
-    if (!u) throw notFound('User');
-    await this.sendInvite(u);
+    const [row] = await usersWithRole(this.drizzle.db).where(eq(users.id, id));
+    if (!row) throw notFound('User');
+    await this.sendInvite(row.user);
   }
 
   async forgotPassword(email: string): Promise<void> {
-    const [u] = await this.drizzle.db.select().from(users).where(eq(users.email, email.toLowerCase()));
+    const [row] = await usersWithRole(this.drizzle.db).where(eq(users.email, email.toLowerCase()));
+    const u = row?.user;
     if (!u || !u.isActive) return; // do not reveal existence
     const raw = await this.tokens.createPasswordToken(u.id, 'reset');
     await this.mail.send({ to: u.email, ...resetEmail(u.firstName, `${this.config.get('WEB_URL')}/reset-password?token=${raw}`) });
@@ -107,14 +112,15 @@ export class UsersService {
   }
 
   async changePassword(id: string, currentPassword: string, newPassword: string): Promise<void> {
-    const [u] = await this.drizzle.db.select().from(users).where(eq(users.id, id));
+    const [row] = await usersWithRole(this.drizzle.db).where(eq(users.id, id));
+    const u = row?.user;
     if (!u?.passwordHash || !(await argon2.verify(u.passwordHash, currentPassword))) throw new DomainError('INVALID_CREDENTIALS', 'Current password is incorrect', 401);
     await this.drizzle.db.update(users).set({ passwordHash: await AuthService.hashPassword(newPassword), updatedAt: new Date() }).where(eq(users.id, id));
     await this.tokens.revokeAllForUser(id);
   }
 
-  async listByRole(role: typeof users.$inferSelect.role): Promise<PublicUser[]> {
-    const rows = await this.drizzle.db.select().from(users).where(and(eq(users.role, role), eq(users.isActive, true)));
+  async listByLevel(level: RoleLevel): Promise<PublicUser[]> {
+    const rows = await usersWithRole(this.drizzle.db).where(and(eq(roles.level, level), eq(users.isActive, true)));
     return rows.map(toPublicUser);
   }
 
@@ -128,6 +134,7 @@ export class UsersService {
     if (constraint === 'users_email_idx') return new DomainError('EMAIL_TAKEN', 'Email already in use', 409);
     if (constraint === 'users_employee_code_idx') return new DomainError('EMPLOYEE_CODE_TAKEN', 'Employee code already in use', 409);
     if (foreignKeyViolationConstraint(err) === 'users_team_id_teams_id_fk') return new DomainError('NOT_FOUND', 'Team not found', 404);
+    if (foreignKeyViolationConstraint(err) === 'users_role_id_roles_id_fk') return new DomainError('NOT_FOUND', 'Role not found', 404);
     return err;
   }
 }

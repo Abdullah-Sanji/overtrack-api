@@ -46,7 +46,7 @@ export class NotificationsListener {
     const c = await this.context(p);
     await this.notifications.notify([p.employeeId], { type: 'sheet.approved', title: 'Your overtime sheet was approved', body: `Your ${c.period} sheet is fully approved and waiting for payment.`, link: `/sheets/${p.sheetId}` },
       genericEmail('Your overtime sheet was approved', `Your ${c.period} overtime sheet is fully approved and has been passed to finance.`, { label: 'Open sheet', href: `${c.web}/sheets/${p.sheetId}` }));
-    const finance = await this.users.listByRole('finance');
+    const finance = await this.users.listByLevel('finance');
     await this.notifications.notify(finance.map((f) => f.id), { type: 'sheet.approved', title: 'Sheet ready for payment', body: `${c.name}'s ${c.period} sheet is approved.`, link: `/payments` });
   }); }
 

@@ -5,9 +5,7 @@ import { DrizzleService } from '@/database/drizzle.service';
 import { users } from '@/database/schema';
 import { DomainError } from '@/common/errors/domain-error';
 import { TokenService } from './token.service';
-
-export type PublicUser = Omit<typeof users.$inferSelect, 'passwordHash'>;
-export const toPublicUser = ({ passwordHash: _p, ...rest }: typeof users.$inferSelect): PublicUser => rest;
+import { PublicUser, toPublicUser, usersWithRole } from '@/users/public-user';
 
 // Verified against when the user is unknown, so response time does not reveal whether an email exists.
 let dummyHash: Promise<string> | undefined;
@@ -22,20 +20,20 @@ export class AuthService {
   }
 
   async login(email: string, password: string) {
-    const [user] = await this.drizzle.db.select().from(users).where(eq(users.email, email.toLowerCase()));
-    const valid = await argon2.verify(user?.passwordHash ?? (await getDummyHash()), password).catch(() => false);
-    if (!user || !user.passwordHash || !valid) {
+    const [row] = await usersWithRole(this.drizzle.db).where(eq(users.email, email.toLowerCase()));
+    const valid = await argon2.verify(row?.user.passwordHash ?? (await getDummyHash()), password).catch(() => false);
+    if (!row || !row.user.passwordHash || !valid) {
       throw new DomainError('INVALID_CREDENTIALS', 'Invalid email or password', 401);
     }
-    if (!user.isActive) throw new DomainError('USER_INACTIVE', 'User is inactive', 401);
-    const accessToken = await this.tokens.issueAccessToken(user);
-    const refresh = await this.tokens.createRefreshToken(user.id);
-    return { accessToken, refresh, user: toPublicUser(user) };
+    if (!row.user.isActive) throw new DomainError('USER_INACTIVE', 'User is inactive', 401);
+    const accessToken = await this.tokens.issueAccessToken({ id: row.user.id, roleId: row.user.roleId, level: row.role.level, teamId: row.user.teamId });
+    const refresh = await this.tokens.createRefreshToken(row.user.id);
+    return { accessToken, refresh, user: toPublicUser(row) };
   }
 
   async refresh(raw: string) {
     const { user, ...refresh } = await this.tokens.rotateRefreshToken(raw);
-    const accessToken = await this.tokens.issueAccessToken(user);
+    const accessToken = await this.tokens.issueAccessToken({ id: user.user.id, roleId: user.user.roleId, level: user.role.level, teamId: user.user.teamId });
     return { accessToken, refresh };
   }
 
@@ -46,8 +44,8 @@ export class AuthService {
   }
 
   async me(id: string): Promise<PublicUser> {
-    const [user] = await this.drizzle.db.select().from(users).where(eq(users.id, id));
-    if (!user) throw new DomainError('NOT_FOUND', 'User not found', 404);
-    return toPublicUser(user);
+    const [row] = await usersWithRole(this.drizzle.db).where(eq(users.id, id));
+    if (!row) throw new DomainError('NOT_FOUND', 'User not found', 404);
+    return toPublicUser(row);
   }
 }

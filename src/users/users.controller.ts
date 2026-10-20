@@ -1,12 +1,12 @@
 import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
 import { CurrentUser } from '@/common/auth/current-user.decorator';
 import { AuthUser } from '@/common/auth/auth-user';
-import { Roles } from '@/common/auth/roles.decorator';
+import { Levels } from '@/common/auth/levels.decorator';
 import { UsersService } from './users.service';
 import { CreateUserDto, ListUsersQueryDto, UpdateUserDto } from './users.dto';
 
 @Controller('users')
-@Roles('admin')
+@Levels('admin')
 export class UsersController {
   constructor(private readonly users: UsersService) {}
 

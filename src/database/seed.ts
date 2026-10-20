@@ -5,7 +5,7 @@ import { count, eq } from 'drizzle-orm';
 import { subMonths, format } from 'date-fns';
 import { AppModule } from '@/app.module';
 import { DrizzleService } from './drizzle.service';
-import { users, teams, sheets, sheetEntries, settings, UserRole, LEGACY_ROLE_NAMES } from './schema';
+import { users, teams, sheets, sheetEntries, settings, roles, RoleLevel, SYSTEM_ROLES } from './schema';
 import { AuthService } from '@/auth/auth.service';
 import { RolesService } from '@/roles/roles.service';
 import { OvertimeTypesService } from '@/overtime-types/overtime-types.service';
@@ -19,21 +19,25 @@ const PASSWORD = 'Password123!';
 export async function seed(app: INestApplicationContext): Promise<void> {
   if (process.env.NODE_ENV === 'production') throw new Error('seed is not allowed in production');
   const db = app.get(DrizzleService).db;
-  const [{ n }] = await db.select({ n: count() }).from(users).where(eq(users.role, 'admin'));
+  const [{ n }] = await db.select({ n: count() }).from(users).innerJoin(roles, eq(roles.id, users.roleId)).where(eq(roles.level, 'admin'));
   if (Number(n) > 0) return;
   const roleIds = await app.get(RolesService).ensureSystemRoles();
   const hash = await AuthService.hashPassword(PASSWORD);
-  const mk = async (email: string, firstName: string, lastName: string, role: UserRole, teamId: string | null = null, code?: string) =>
-    (await db.insert(users).values({ email, firstName, lastName, role, roleId: roleIds.get(LEGACY_ROLE_NAMES[role])!, teamId, passwordHash: hash, employeeCode: code ?? null, timezone: 'Asia/Riyadh' }).returning())[0];
+  const levelOf = new Map<string, RoleLevel>();
+  const mk = async (email: string, firstName: string, lastName: string, roleName: string, teamId: string | null = null, code?: string) => {
+    const row = (await db.insert(users).values({ email, firstName, lastName, roleId: roleIds.get(roleName)!, teamId, passwordHash: hash, employeeCode: code ?? null, timezone: 'Asia/Riyadh' }).returning())[0];
+    levelOf.set(row.id, SYSTEM_ROLES.find((r) => r.name === roleName)!.level);
+    return row;
+  };
 
   await db.insert(settings).values({ id: 1, companyName: 'OverTrack Demo', defaultTimezone: 'Asia/Riyadh' }).onConflictDoNothing();
   const types = app.get(OvertimeTypesService); await types.ensureDefaults();
   const [weekday, weekend] = await types.list();
 
-  const adminUser = await mk('admin@overtrack.local', 'Ada', 'Admin', 'admin');
-  await mk('finance@overtrack.local', 'Fay', 'Finance', 'finance');
-  const cto = await mk('cto@overtrack.local', 'Cem', 'Taylor', 'cto');
-  const admin: AuthUser = { id: adminUser.id, role: 'admin', teamId: null };
+  const adminUser = await mk('admin@overtrack.local', 'Ada', 'Admin', 'Admin');
+  await mk('finance@overtrack.local', 'Fay', 'Finance', 'Finance');
+  const cto = await mk('cto@overtrack.local', 'Cem', 'Taylor', 'CTO');
+  const admin: AuthUser = { id: adminUser.id, roleId: roleIds.get('Admin')!, level: 'admin', teamId: null };
 
   const chains = app.get(ApprovalChainsService); const workflow = app.get(WorkflowService); const sheetsSvc = app.get(SheetsService);
   const period = format(subMonths(new Date(), 1), 'yyyy-MM');
@@ -42,12 +46,12 @@ export async function seed(app: INestApplicationContext): Promise<void> {
   for (const slug of ['platform', 'mobile']) {
     const name = slug[0].toUpperCase() + slug.slice(1);
     const [team] = await db.insert(teams).values({ name, description: `${name} team` }).returning();
-    const tl = await mk(`tl.${slug}@overtrack.local`, 'Tara', `${name} Lead`, 'tech_lead', team.id, `E${code++}`);
-    const dm = await mk(`dm.${slug}@overtrack.local`, 'Dan', `${name} Manager`, 'delivery_manager', null, `E${code++}`);
+    const tl = await mk(`tl.${slug}@overtrack.local`, 'Tara', `${name} Lead`, 'Tech Lead', team.id, `E${code++}`);
+    const dm = await mk(`dm.${slug}@overtrack.local`, 'Dan', `${name} Manager`, 'Delivery Manager', null, `E${code++}`);
     await db.update(teams).set({ techLeadId: tl.id }).where(eq(teams.id, team.id));
     await chains.replaceForTeam(adminUser.id, team.id, { steps: [{ label: 'Tech Lead', approverId: tl.id, backupApproverId: dm.id }, { label: 'Delivery Manager', approverId: dm.id }, { label: 'CTO', approverId: cto.id }] });
     const emps = [] as Array<typeof tl>;
-    for (let i = 1; i <= 3; i++) emps.push(await mk(`emp${i}.${slug}@overtrack.local`, ['Eve', 'Eli', 'Emma'][i - 1], name, 'employee', team.id, `E${code++}`));
+    for (let i = 1; i <= 3; i++) emps.push(await mk(`emp${i}.${slug}@overtrack.local`, ['Eve', 'Eli', 'Emma'][i - 1], name, 'Employee', team.id, `E${code++}`));
 
     const addEntries = async (empId: string) => {
       const s = await sheetsSvc.getOrCreateForPeriod(empId, period);
@@ -58,7 +62,7 @@ export async function seed(app: INestApplicationContext): Promise<void> {
       await sheetsSvc.recomputeTotals(db, s.id);
       return s.id;
     };
-    const actorOf = (u: typeof tl): AuthUser => ({ id: u.id, role: u.role, teamId: u.teamId });
+    const actorOf = (u: typeof tl): AuthUser => ({ id: u.id, roleId: u.roleId, level: levelOf.get(u.id)!, teamId: u.teamId });
     const ver = async (id: string) => (await db.select({ v: sheets.version }).from(sheets).where(eq(sheets.id, id)))[0].v;
     const step = async (actor: AuthUser, id: string, action: Parameters<WorkflowService['act']>[2]) => workflow.act(actor, id, action, await ver(id));
 

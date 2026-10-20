@@ -4,6 +4,7 @@ import { JwtService } from '@nestjs/jwt';
 import { FastifyRequest } from 'fastify';
 import { IS_PUBLIC } from './public.decorator';
 import { DomainError } from '../errors/domain-error';
+import { RoleLevel } from '@/database/schema';
 import { AuthUser } from './auth-user';
 
 @Injectable()
@@ -17,10 +18,12 @@ export class JwtAuthGuard implements CanActivate {
     const token = header.startsWith('Bearer ') ? header.slice(7) : null;
     if (!token) throw new DomainError('UNAUTHORIZED', 'Missing bearer token', 401);
     try {
-      const payload = await this.jwt.verifyAsync<{ sub: string; role: AuthUser['role']; teamId: string | null }>(token);
-      req.user = { id: payload.sub, role: payload.role, teamId: payload.teamId ?? null };
+      const payload = await this.jwt.verifyAsync<{ sub: string; roleId: string; level: RoleLevel; teamId: string | null }>(token);
+      if (!payload.level || !payload.roleId) throw new DomainError('TOKEN_EXPIRED', 'Token predates the roles upgrade', 401);
+      req.user = { id: payload.sub, roleId: payload.roleId, level: payload.level, teamId: payload.teamId ?? null };
       return true;
-    } catch {
+    } catch (err) {
+      if (err instanceof DomainError) throw err;
       throw new DomainError('TOKEN_EXPIRED', 'Invalid or expired token', 401);
     }
   }

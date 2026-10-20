@@ -6,7 +6,7 @@ import { AuditService } from '@/audit/audit.service';
 import { DomainError, notFound } from '@/common/errors/domain-error';
 import { foreignKeyViolationConstraint, uniqueViolationConstraint } from '@/common/errors/pg';
 import { paged, parsePagination } from '@/common/pagination';
-import { toPublicUser } from '@/auth/auth.service';
+import { toPublicUser, usersWithRole } from '@/users/public-user';
 import { CreateTeamDto, ListTeamsQueryDto, UpdateTeamDto } from './teams.dto';
 
 export interface TeamSummary {
@@ -89,7 +89,7 @@ export class TeamsService {
 
   async members(id: string) {
     await this.findById(id);
-    const rows = await this.drizzle.db.select().from(users).where(and(eq(users.teamId, id), eq(users.isActive, true))).orderBy(asc(users.lastName));
+    const rows = await usersWithRole(this.drizzle.db).where(and(eq(users.teamId, id), eq(users.isActive, true))).orderBy(asc(users.lastName));
     return rows.map(toPublicUser);
   }
 
