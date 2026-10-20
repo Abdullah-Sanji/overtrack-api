@@ -52,7 +52,7 @@
 ```ts
 export type RoleLevel = 'employee' | 'manager' | 'finance' | 'admin';
 export interface RoleRef { id: string; name: string; level: RoleLevel }
-export interface RoleView extends RoleRef { isSystem: boolean; userCount: number; createdAt: string; updatedAt: string }
+export interface RoleView extends RoleRef { isSystem: boolean; systemKey: string | null; userCount: number; createdAt: string; updatedAt: string }
 ```
 
 and in `PublicUser` change `role: UserRole;` to `role: RoleRef;`. Delete `UserRole` everywhere (`grep -rn UserRole src`).
@@ -120,7 +120,7 @@ export const levelLabel = (l: RoleLevel) => LEVEL_OPTIONS.find((o) => o.value ==
 
 `UsersPage.vue`: add `const roles = useQuery({ queryKey: ['roles'], queryFn: () => rolesApi.list() })`; the role filter `Select` options become `[{ value: 'all', label: 'All roles' }, ...(roles.data.value ?? []).map(r => ({ value: r.id, label: r.name }))]` and `params.roleId = role.value === 'all' ? undefined : role.value`; the Role column renders `row.original.role.name` with tone `row.original.role.level === 'admin' ? 'indigo' : 'neutral'`.
 
-`UserFormDrawer.vue`: schema `role: z.enum([...])` → `roleId: z.string().min(1, 'Pick a role')`; `initialValues` uses `roleId: u.role.id` / `roleId: ''`; `const [roleId] = defineField('roleId')`; add `const roles = useQuery({ queryKey: ['roles'], queryFn: () => rolesApi.list() })` and `const roleOptions = computed(() => (roles.data.value ?? []).map(r => ({ value: r.id, label: r.name, description: levelLabel(r.level) })))`; the Role `Select` binds `:model-value="roleId || null"`, `:options="roleOptions"`, `placeholder="Pick a role"`; the submit button gets `:disabled="roles.isPending.value"`; the create/update bodies send `roleId`. When creating, default `roleId` to the role named `Employee` once roles load: `watch(roles.data, (list) => { if (!props.user && !roleId.value && list) roleId.value = list.find(r => r.name === 'Employee')?.id ?? ''; }, { immediate: true })`.
+`UserFormDrawer.vue`: schema `role: z.enum([...])` → `roleId: z.string().min(1, 'Pick a role')`; `initialValues` uses `roleId: u.role.id` / `roleId: ''`; `const [roleId] = defineField('roleId')`; add `const roles = useQuery({ queryKey: ['roles'], queryFn: () => rolesApi.list() })` and `const roleOptions = computed(() => (roles.data.value ?? []).map(r => ({ value: r.id, label: r.name, description: levelLabel(r.level) })))`; the Role `Select` binds `:model-value="roleId || null"`, `:options="roleOptions"`, `placeholder="Pick a role"`; the submit button gets `:disabled="roles.isPending.value"`; the create/update bodies send `roleId`. When creating, default `roleId` to the role named `Employee` once roles load: `watch(roles.data, (list) => { if (!props.user && !roleId.value && list) roleId.value = list.find((r) => r.isSystem && r.level === 'employee')?.id ?? list[0]?.id ?? ''; }, { immediate: true })`.
 
 `ProfilePage.vue:106` → `{{ auth.user?.role.name }}` (drop the `roleLabel` import).
 
