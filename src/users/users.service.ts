@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as argon2 from 'argon2';
-import { and, asc, count, eq, ilike, or, SQL } from 'drizzle-orm';
+import { and, asc, count, eq, ilike, or, sql, SQL } from 'drizzle-orm';
 import { DrizzleService } from '@/database/drizzle.service';
 import { users, roles, RoleLevel } from '@/database/schema';
 import { DomainError, notFound } from '@/common/errors/domain-error';
@@ -19,6 +19,27 @@ import { CreateUserDto, ListUsersQueryDto, UpdateUserDto } from './users.dto';
 @Injectable()
 export class UsersService {
   constructor(private readonly drizzle: DrizzleService, private readonly tokens: TokenService, private readonly mail: MailService, private readonly config: ConfigService<Env, true>, private readonly audit: AuditService) {}
+
+  async remove(actorId: string, id: string): Promise<void> {
+    if (actorId === id) throw new DomainError('CANNOT_DELETE_SELF', 'You cannot delete your own account', 409);
+    await this.drizzle.db.transaction(async (tx) => {
+      const [row] = await usersWithRole(tx).where(eq(users.id, id));
+      if (!row) throw notFound('User');
+      const res = await tx.execute<{ has_history: boolean }>(sql`
+        select (
+          exists(select 1 from sheets where employee_id = ${id} or paid_by_id = ${id})
+          or exists(select 1 from sheet_entries where requested_by_id = ${id})
+          or exists(select 1 from attachments where owner_id = ${id})
+          or exists(select 1 from sheet_approval_steps where approver_id = ${id} or backup_approver_id = ${id} or decided_by_id = ${id})
+          or exists(select 1 from audit_log where actor_id = ${id})
+          or exists(select 1 from approval_chain_steps where approver_id = ${id} or backup_approver_id = ${id})
+          or exists(select 1 from teams where tech_lead_id = ${id})
+        ) as has_history`);
+      if (res.rows[0]?.has_history) throw new DomainError('USER_HAS_HISTORY', 'This user has history (sheets, approvals or audit entries). Deactivate them instead.', 409);
+      await tx.delete(users).where(eq(users.id, id)); // notifications and tokens cascade
+      await this.audit.record(tx, { actorId, action: 'user.deleted', entityType: 'user', entityId: id, before: toPublicUser(row) });
+    });
+  }
 
   async findById(id: string): Promise<PublicUser> {
     const [row] = await usersWithRole(this.drizzle.db).where(eq(users.id, id));
