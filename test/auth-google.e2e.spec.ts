@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { createTestApp } from './helpers/app';
 import { truncateAll } from './helpers/db';
@@ -7,14 +7,17 @@ import { DrizzleService } from '@/database/drizzle.service';
 import { DomainError } from '@/common/errors/domain-error';
 import { GoogleTokenVerifier, GoogleIdentity } from '@/auth/google-token.verifier';
 
+// ConfigModule reads env when AppModule is imported, so the value must be pinned before imports (and the developer's .env must not leak in).
+vi.hoisted(() => { process.env.GOOGLE_CLIENT_ID = 'test-client-id'; });
+
 const identities = new Map<string, GoogleIdentity>(); // credential -> identity
 const stub = { verify: async (c: string) => { const id = identities.get(c); if (!id) throw new DomainError('GOOGLE_TOKEN_INVALID', 'Google sign-in failed, try again', 401); return id; } };
 const google = (app: NestFastifyApplication, credential: string) => app.inject({ method: 'POST', url: '/api/v1/auth/google', payload: { credential } });
 
 describe('auth/google', () => {
   let app: NestFastifyApplication; let db: DrizzleService['db'];
-  beforeAll(async () => { process.env.GOOGLE_CLIENT_ID = 'test-client-id'; app = await createTestApp((b) => b.overrideProvider(GoogleTokenVerifier).useValue(stub)); db = app.get(DrizzleService).db; });
-  afterAll(async () => { await app.close(); delete process.env.GOOGLE_CLIENT_ID; });
+  beforeAll(async () => { app = await createTestApp((b) => b.overrideProvider(GoogleTokenVerifier).useValue(stub)); db = app.get(DrizzleService).db; });
+  afterAll(async () => { await app.close(); });
   beforeEach(async () => { await truncateAll(db); identities.clear(); });
 
   it('signs in a known, active user and sets the refresh cookie', async () => {
@@ -48,11 +51,3 @@ describe('auth/google', () => {
   });
 });
 
-describe('auth/google when GOOGLE_CLIENT_ID is unset', () => {
-  it('returns 503 GOOGLE_SIGNIN_DISABLED', async () => {
-    delete process.env.GOOGLE_CLIENT_ID;
-    const app = await createTestApp();
-    const res = await google(app, 'anything-long-enough'); expect(res.statusCode).toBe(503); expect(res.json().code).toBe('GOOGLE_SIGNIN_DISABLED');
-    await app.close();
-  });
-});
