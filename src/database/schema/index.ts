@@ -1,4 +1,5 @@
 export * from './enums';
+export * from './roles';
 export * from './users-teams';
 export * from './approval-chain-steps';
 export * from './overtime-types';

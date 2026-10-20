@@ -5,6 +5,7 @@ import { createTestApp } from './helpers/app';
 import { truncateAll } from './helpers/db';
 import { DrizzleService } from '@/database/drizzle.service';
 import { users, sheets } from '@/database/schema';
+import { systemRoleId } from './helpers/factories';
 
 describe('database', () => {
   let app: NestFastifyApplication;
@@ -13,7 +14,7 @@ describe('database', () => {
   afterAll(async () => { await app.close(); });
 
   it('inserts a user and a sheet and enforces the unique period per employee', async () => {
-    const [u] = await drizzle.db.insert(users).values({ firstName: 'A', lastName: 'B', email: 'a@b.c' }).returning();
+    const [u] = await drizzle.db.insert(users).values({ firstName: 'A', lastName: 'B', email: 'a@b.c', roleId: await systemRoleId(drizzle.db, 'employee') }).returning();
     await drizzle.db.insert(sheets).values({ employeeId: u.id, period: '2026-09-01' });
     // drizzle-orm 0.44 wraps driver errors in DrizzleQueryError; the pg error is on .cause
     const err = await drizzle.db.insert(sheets).values({ employeeId: u.id, period: '2026-09-01' }).catch((e: unknown) => e);

@@ -1,5 +1,5 @@
 import { Db } from '@/database/drizzle.service';
-import { users, teams, UserRole, overtimeTypes, sheets, sheetEntries, approvalChainSteps } from '@/database/schema';
+import { users, teams, roles, LEGACY_ROLE_NAMES, LegacyRole, RoleLevel, overtimeTypes, sheets, sheetEntries, approvalChainSteps } from '@/database/schema';
 import { eq } from 'drizzle-orm';
 import * as argon2 from 'argon2';
 import { NestFastifyApplication } from '@nestjs/platform-fastify';
@@ -7,7 +7,24 @@ import { bearer } from './app';
 
 let counter = 0;
 
-export async function createUser(db: Db, o: Partial<{ email: string; password: string; role: UserRole; teamId: string | null; firstName: string; lastName: string; isActive: boolean; employeeCode: string }> = {}) {
+const roleIds = new Map<string, string>();
+export async function systemRoleId(db: Db, legacy: LegacyRole): Promise<string> {
+  const name = LEGACY_ROLE_NAMES[legacy];
+  const cached = roleIds.get(name);
+  if (cached) return cached;
+  const [r] = await db.select({ id: roles.id }).from(roles).where(eq(roles.name, name));
+  if (!r) throw new Error(`system role ${name} missing`);
+  roleIds.set(name, r.id);
+  return r.id;
+}
+
+export async function createRole(db: Db, o: Partial<{ name: string; level: RoleLevel }> = {}) {
+  counter += 1;
+  const [r] = await db.insert(roles).values({ name: o.name ?? `Role ${counter}`, level: o.level ?? 'employee' }).returning();
+  return r;
+}
+
+export async function createUser(db: Db, o: Partial<{ email: string; password: string; role: LegacyRole; roleId: string; teamId: string | null; firstName: string; lastName: string; isActive: boolean; employeeCode: string }> = {}) {
   counter += 1;
   const password = o.password ?? 'Password123!';
   const [u] = await db.insert(users).values({
@@ -16,6 +33,7 @@ export async function createUser(db: Db, o: Partial<{ email: string; password: s
     email: o.email ?? `user${counter}@test.local`,
     passwordHash: await argon2.hash(password, { type: argon2.argon2id }),
     role: o.role ?? 'employee',
+    roleId: o.roleId ?? (await systemRoleId(db, o.role ?? 'employee')),
     teamId: o.teamId ?? null,
     isActive: o.isActive ?? true,
     employeeCode: o.employeeCode ?? `E${1000 + counter}`,

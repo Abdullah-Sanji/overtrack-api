@@ -7,4 +7,5 @@ export async function truncateAll(db: Db): Promise<void> {
       sheet_entries, attachments, sheets, approval_chain_steps, overtime_types, users, teams, settings
     RESTART IDENTITY CASCADE
   `);
+  await db.execute(sql`DELETE FROM roles WHERE NOT is_system`);
 }

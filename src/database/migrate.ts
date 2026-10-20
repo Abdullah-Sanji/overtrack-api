@@ -4,10 +4,10 @@ import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { Pool } from 'pg';
 import path from 'node:path';
 
-export async function runMigrations(databaseUrl: string): Promise<void> {
+export async function runMigrations(databaseUrl: string, migrationsFolder = path.resolve(__dirname, '../../drizzle')): Promise<void> {
   const pool = new Pool({ connectionString: databaseUrl });
   try {
-    await migrate(drizzle(pool), { migrationsFolder: path.resolve(__dirname, '../../drizzle') });
+    await migrate(drizzle(pool), { migrationsFolder });
   } finally {
     await pool.end();
   }

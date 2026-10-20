@@ -6,7 +6,8 @@ import { z } from 'zod';
 import { AppModule } from '@/app.module';
 import { AuthService } from '@/auth/auth.service';
 import { DrizzleService } from './drizzle.service';
-import { users } from './schema';
+import { users, LEGACY_ROLE_NAMES } from './schema';
+import { RolesService } from '@/roles/roles.service';
 
 export interface CreateAdminInput { email: string; password: string; firstName: string; lastName: string }
 
@@ -22,8 +23,9 @@ export async function createAdmin(app: INestApplicationContext, input: CreateAdm
   const db = app.get(DrizzleService).db;
   const [existing] = await db.select({ id: users.id }).from(users).where(eq(users.email, data.email));
   if (existing) return 'exists';
+  const roleIds = await app.get(RolesService).ensureSystemRoles();
   const passwordHash = await AuthService.hashPassword(data.password);
-  await db.insert(users).values({ email: data.email, firstName: data.firstName, lastName: data.lastName, role: 'admin', isActive: true, passwordHash });
+  await db.insert(users).values({ email: data.email, firstName: data.firstName, lastName: data.lastName, role: 'admin', roleId: roleIds.get(LEGACY_ROLE_NAMES.admin)!, isActive: true, passwordHash });
   return 'created';
 }
 

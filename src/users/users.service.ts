@@ -1,9 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as argon2 from 'argon2';
-import { and, asc, count, eq, ilike, or, SQL } from 'drizzle-orm';
+import { and, asc, count, eq, ilike, or, sql, SQL } from 'drizzle-orm';
 import { DrizzleService } from '@/database/drizzle.service';
-import { users } from '@/database/schema';
+import { users, LEGACY_ROLE_NAMES } from '@/database/schema';
 import { DomainError, notFound } from '@/common/errors/domain-error';
 import { foreignKeyViolationConstraint, uniqueViolationConstraint } from '@/common/errors/pg';
 import { paged, parsePagination } from '@/common/pagination';
@@ -53,7 +53,7 @@ export class UsersService {
     let u: typeof users.$inferSelect;
     try {
       u = await this.drizzle.db.transaction(async (tx) => {
-        const [row] = await tx.insert(users).values({ ...dto, email, timezone: dto.timezone ?? this.config.get('DEFAULT_TIMEZONE') }).returning();
+        const [row] = await tx.insert(users).values({ ...dto, roleId: sql`(select id from roles where name = ${LEGACY_ROLE_NAMES[dto.role]})`, email, timezone: dto.timezone ?? this.config.get('DEFAULT_TIMEZONE') }).returning();
         await this.audit.record(tx, { actorId, action: 'user.created', entityType: 'user', entityId: row.id, after: toPublicUser(row) });
         return row;
       });

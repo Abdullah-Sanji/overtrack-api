@@ -8,6 +8,7 @@ import { seed } from '@/database/seed';
 import { DrizzleService } from '@/database/drizzle.service';
 import { overtimeTypes, settings, users } from '@/database/schema';
 import { BootstrapService } from '@/bootstrap/bootstrap.service';
+import { RolesService } from '@/roles/roles.service';
 import { OvertimeTypesService } from '@/overtime-types/overtime-types.service';
 
 describe('create-admin', () => {
@@ -25,7 +26,7 @@ describe('create-admin', () => {
   });
 
   it('bootstrap seeds default types and settings idempotently outside test env', async () => {
-    const svc = new BootstrapService(app.get(DrizzleService), app.get(OvertimeTypesService), { get: (k: string) => (k === 'NODE_ENV' ? 'production' : 'UTC') } as never);
+    const svc = new BootstrapService(app.get(DrizzleService), app.get(RolesService), app.get(OvertimeTypesService), { get: (k: string) => (k === 'NODE_ENV' ? 'production' : 'UTC') } as never);
     await svc.onModuleInit(); await svc.onModuleInit();
     const [{ t }] = await db.select({ t: count() }).from(overtimeTypes); expect(Number(t)).toBeGreaterThan(0);
     const [{ n }] = await db.select({ n: count() }).from(settings); expect(Number(n)).toBe(1);

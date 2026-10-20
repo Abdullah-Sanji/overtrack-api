@@ -7,6 +7,7 @@ import { ZodValidationPipe } from 'nestjs-zod';
 import { ApprovalChainsModule } from './approval-chains/approval-chains.module';
 import { AttachmentsModule } from './attachments/attachments.module';
 import { AuditModule } from './audit/audit.module';
+import { RolesModule } from './roles/roles.module';
 import { BootstrapModule } from './bootstrap/bootstrap.module';
 import { AuthModule } from './auth/auth.module';
 import { JwtAuthGuard } from './common/auth/jwt-auth.guard';
@@ -32,6 +33,7 @@ import { WorkflowModule } from './workflow/workflow.module';
     DatabaseModule,
     MailModule,
     AuditModule,
+    RolesModule,
     AuthModule,
     UsersModule,
     TeamsModule,

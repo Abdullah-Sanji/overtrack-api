@@ -15,6 +15,13 @@
       "when": 1792400385224,
       "tag": "0001_jittery_leech",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792500000000,
+      "tag": "0002_roles",
+      "breakpoints": true
     }
   ]
 }

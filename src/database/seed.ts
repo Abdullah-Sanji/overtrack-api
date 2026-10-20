@@ -5,8 +5,9 @@ import { count, eq } from 'drizzle-orm';
 import { subMonths, format } from 'date-fns';
 import { AppModule } from '@/app.module';
 import { DrizzleService } from './drizzle.service';
-import { users, teams, sheets, sheetEntries, settings, UserRole } from './schema';
+import { users, teams, sheets, sheetEntries, settings, UserRole, LEGACY_ROLE_NAMES } from './schema';
 import { AuthService } from '@/auth/auth.service';
+import { RolesService } from '@/roles/roles.service';
 import { OvertimeTypesService } from '@/overtime-types/overtime-types.service';
 import { ApprovalChainsService } from '@/approval-chains/approval-chains.service';
 import { WorkflowService } from '@/workflow/workflow.service';
@@ -20,9 +21,10 @@ export async function seed(app: INestApplicationContext): Promise<void> {
   const db = app.get(DrizzleService).db;
   const [{ n }] = await db.select({ n: count() }).from(users).where(eq(users.role, 'admin'));
   if (Number(n) > 0) return;
+  const roleIds = await app.get(RolesService).ensureSystemRoles();
   const hash = await AuthService.hashPassword(PASSWORD);
   const mk = async (email: string, firstName: string, lastName: string, role: UserRole, teamId: string | null = null, code?: string) =>
-    (await db.insert(users).values({ email, firstName, lastName, role, teamId, passwordHash: hash, employeeCode: code ?? null, timezone: 'Asia/Riyadh' }).returning())[0];
+    (await db.insert(users).values({ email, firstName, lastName, role, roleId: roleIds.get(LEGACY_ROLE_NAMES[role])!, teamId, passwordHash: hash, employeeCode: code ?? null, timezone: 'Asia/Riyadh' }).returning())[0];
 
   await db.insert(settings).values({ id: 1, companyName: 'OverTrack Demo', defaultTimezone: 'Asia/Riyadh' }).onConflictDoNothing();
   const types = app.get(OvertimeTypesService); await types.ensureDefaults();
