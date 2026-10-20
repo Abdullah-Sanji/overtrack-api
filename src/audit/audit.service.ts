@@ -5,7 +5,7 @@ import { auditLog, users } from '@/database/schema';
 import { paged, parsePagination } from '@/common/pagination';
 import { ListAuditQueryDto } from './audit.dto';
 
-export type AuditEntityType = 'sheet' | 'user' | 'team' | 'chain' | 'overtime_type';
+export type AuditEntityType = 'sheet' | 'user' | 'team' | 'chain' | 'overtime_type' | 'role';
 export interface AuditEntry { actorId: string | null; action: string; entityType: AuditEntityType; entityId: string; before?: unknown; after?: unknown; reason?: string | null }
 
 @Injectable()
