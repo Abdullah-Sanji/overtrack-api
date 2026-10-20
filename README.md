@@ -13,6 +13,9 @@ pnpm start:dev                # http://localhost:3000/docs
 Seeded logins (password `Password123!`): `admin@overtrack.local`, `finance@overtrack.local`, `cto@overtrack.local`,
 `tl.platform@overtrack.local`, `dm.platform@overtrack.local`, `emp1.platform@overtrack.local` ... `emp3.platform@overtrack.local`,
 and the same pattern for `mobile` (`tl.mobile@`, `dm.mobile@`, `emp1.mobile@` ... `emp3.mobile@`).
+Roles are data: six system roles (Employee, Tech Lead, Delivery Manager, CTO, Finance, Admin) are created on first start and
+admins can add more under Admin → Roles. A role's *level* (employee, manager, finance, admin) decides permissions.
+Migration 0003 drops the old `user_role` enum; back up the database before running it in production.
 
 ## Test
 ```
