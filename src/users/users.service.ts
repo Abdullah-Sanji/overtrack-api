@@ -92,6 +92,10 @@ export class UsersService {
       return await this.drizzle.db.transaction(async (tx) => {
         const [before] = await usersWithRole(tx).where(eq(users.id, id));
         if (!before) throw notFound('User');
+        if (id === actorId && dto.roleId) {
+          const [target] = await tx.select({ level: roles.level }).from(roles).where(eq(roles.id, dto.roleId));
+          if (target && target.level !== 'admin') throw new DomainError('CANNOT_DEMOTE_SELF', 'You cannot remove admin level from your own account', 409);
+        }
         await tx.update(users).set({ ...dto, updatedAt: new Date() }).where(eq(users.id, id));
         const [after] = await usersWithRole(tx).where(eq(users.id, id));
         await this.audit.record(tx, { actorId, action: 'user.updated', entityType: 'user', entityId: id, before: toPublicUser(before), after: toPublicUser(after) });

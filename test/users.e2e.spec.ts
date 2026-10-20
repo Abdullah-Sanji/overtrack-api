@@ -18,6 +18,14 @@ describe('users', () => {
     adminToken = (await login(app, admin.email, admin.password)).accessToken;
   });
 
+  it('an admin cannot demote themselves through PATCH, but can change others', async () => {
+    const employeeRole = await systemRoleId(db, 'employee'); const other = await createUser(db, { role: 'tech_lead' });
+    const self = await app.inject({ method: 'PATCH', url: `/api/v1/users/${admin.id}`, headers: bearer(adminToken), payload: { roleId: employeeRole } });
+    expect(self.statusCode).toBe(409); expect(self.json().code).toBe('CANNOT_DEMOTE_SELF');
+    const ok = await app.inject({ method: 'PATCH', url: `/api/v1/users/${other.id}`, headers: bearer(adminToken), payload: { roleId: employeeRole } });
+    expect(ok.statusCode).toBe(200);
+  });
+
   it('admin creates a user, which sends an invite that can be accepted', async () => {
     const team = await createTeam(db);
     const res = await app.inject({ method: 'POST', url: '/api/v1/users', headers: bearer(adminToken),

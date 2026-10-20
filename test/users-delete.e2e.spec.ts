@@ -5,7 +5,7 @@ import { createTestApp, login, bearer } from './helpers/app';
 import { truncateAll } from './helpers/db';
 import { createUser, createTeam, createChain, createSheet, createEntry, createOvertimeType } from './helpers/factories';
 import { DrizzleService } from '@/database/drizzle.service';
-import { auditLog, notifications, sheetApprovalSteps, sheetEntries, sheets, users } from '@/database/schema';
+import { attachments, auditLog, notifications, sheetApprovalSteps, sheetEntries, sheets, users } from '@/database/schema';
 
 describe('delete users', () => {
   let app: NestFastifyApplication; let db: DrizzleService['db']; let adminToken: string; let admin: Awaited<ReturnType<typeof createUser>>;
@@ -58,6 +58,26 @@ describe('delete users', () => {
     const emp = await createUser(db); const payer = await createUser(db); const s = await createSheet(db, emp.id);
     await db.update(sheets).set({ paidById: payer.id }).where(eq(sheets.id, s.id));
     await expectHistory(payer.id);
+  });
+  it('refuses when the user owns an attachment', async () => {
+    const u = await createUser(db);
+    await db.insert(attachments).values({ ownerId: u.id, storageKey: 'k/1', originalName: 'a.png', mimeType: 'image/png', sizeBytes: 1 });
+    await expectHistory(u.id);
+  });
+  it('refuses when the user is the primary approver on a sheet step', async () => {
+    const emp = await createUser(db); const sheet = await createSheet(db, emp.id); const approver = await createUser(db);
+    await db.insert(sheetApprovalSteps).values({ sheetId: sheet.id, round: 1, position: 1, label: 'TL', approverId: approver.id });
+    await expectHistory(approver.id);
+  });
+  it('refuses when the user is the backup approver on a sheet step', async () => {
+    const emp = await createUser(db); const sheet = await createSheet(db, emp.id); const approver = await createUser(db); const backup = await createUser(db);
+    await db.insert(sheetApprovalSteps).values({ sheetId: sheet.id, round: 1, position: 1, label: 'TL', approverId: approver.id, backupApproverId: backup.id });
+    await expectHistory(backup.id);
+  });
+  it('refuses when the user is the primary approver on a chain step', async () => {
+    const lead = await createUser(db); const t = await createTeam(db);
+    await createChain(db, t.id, [{ label: 'TL', approverId: lead.id }]);
+    await expectHistory(lead.id);
   });
   it('non-admins get 403', async () => {
     const emp = await createUser(db); const token = (await login(app, emp.email, emp.password)).accessToken; const victim = await createUser(db);
