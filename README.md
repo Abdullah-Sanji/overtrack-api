@@ -35,6 +35,7 @@ The API and the web app deploy as two compose stacks that share one Docker netwo
 POSTGRES_PASSWORD=… JWT_SECRET=… WEB_URL=https://overtrack.example.com SMTP_URL=smtp://… \
   docker compose -f docker-compose.prod.yml up -d --build
 ```
+`JWT_SECRET` must be at least 32 characters; generate one with `openssl rand -base64 48`.
 Nothing in this stack publishes a port: the API is reachable only through the web stack's nginx, and Postgres only from the API. Add `GOOGLE_CLIENT_ID=…` to enable Google sign-in (see below).
 Compose interpolates `${VAR}` from the shell and from the `.env` file next to the compose file, so on a server you can keep the deploy values in this repo's `.env` instead of the command line. Be aware that a development `.env` is read the same way.
 The API image applies migrations on start, then launches the server.
