@@ -21,7 +21,7 @@ services:
       SMTP_URL: ${SMTP_URL:?set SMTP_URL}
       MAIL_FROM: ${MAIL_FROM:-OverTrack <no-reply@overtrack.local>}
       STORAGE_PATH: /data/storage
-      TRUST_PROXY: 1
+      TRUST_PROXY: ${TRUST_PROXY:-1}
       DEFAULT_TIMEZONE: ${DEFAULT_TIMEZONE:-UTC}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
     volumes: ["storage:/data/storage"]
