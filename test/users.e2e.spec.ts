@@ -102,6 +102,16 @@ describe('users', () => {
     expect(mail.sent).toHaveLength(0);
   });
 
+  it('a reset token presented concurrently is consumed exactly once', async () => {
+    const u = await createUser(db);
+    await app.inject({ method: 'POST', url: '/api/v1/auth/forgot-password', payload: { email: u.email } });
+    const token = mail.sent[0].html.match(/reset-password\?token=([a-f0-9]+)/)![1];
+    const results = await Promise.all(Array.from({ length: 6 }, (_, i) =>
+      app.inject({ method: 'POST', url: '/api/v1/auth/reset-password', payload: { token, password: `Concurrent${i}Pass` } })));
+    expect(results.filter((r) => r.statusCode === 204)).toHaveLength(1);
+    expect(results.filter((r) => r.statusCode === 400)).toHaveLength(5);
+  });
+
   it('me: update profile and change password', async () => {
     const u = await createUser(db);
     const { accessToken, cookie } = await login(app, u.email, u.password);

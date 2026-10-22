@@ -4,6 +4,9 @@ import { createTestApp, login, bearer } from './helpers/app';
 import { truncateAll } from './helpers/db';
 import { createUser, createOvertimeType, createSheet, createEntry } from './helpers/factories';
 import { DrizzleService } from '@/database/drizzle.service';
+import { attachments } from '@/database/schema';
+import { mkdir, readdir } from 'node:fs/promises';
+import path from 'node:path';
 
 function multipart(fields: { name: string; filename: string; type: string; data: Buffer }) {
   const boundary = '----overtrack';
@@ -46,6 +49,19 @@ describe('attachments', () => {
     await app.inject({ method: 'POST', url: `/api/v1/sheets/${sheetId}/entries/${entryId}/attachment`, headers: { ...bearer(token), ...ok.headers }, payload: ok.payload });
     const second = await app.inject({ method: 'POST', url: `/api/v1/sheets/${sheetId}/entries/${entryId}/attachment`, headers: { ...bearer(token), ...ok.headers }, payload: ok.payload });
     expect(second.json().code).toBe('ATTACHMENT_EXISTS');
+  });
+
+  it('concurrent uploads to one entry keep exactly one file and one row', async () => {
+    const dir = path.resolve(process.env.STORAGE_PATH!);
+    await mkdir(dir, { recursive: true });
+    const before = (await readdir(dir)).length;
+    const ok = multipart({ name: 'file', filename: 'a.png', type: 'image/png', data: PNG });
+    const results = await Promise.all(Array.from({ length: 5 }, () =>
+      app.inject({ method: 'POST', url: `/api/v1/sheets/${sheetId}/entries/${entryId}/attachment`, headers: { ...bearer(token), ...ok.headers }, payload: ok.payload })));
+    expect(results.filter((r) => r.statusCode === 201)).toHaveLength(1);
+    expect(results.filter((r) => r.json().code === 'ATTACHMENT_EXISTS')).toHaveLength(4);
+    expect((await readdir(dir)).length - before).toBe(1);
+    expect(await db.select().from(attachments)).toHaveLength(1);
   });
 
   it('strangers cannot download', async () => {

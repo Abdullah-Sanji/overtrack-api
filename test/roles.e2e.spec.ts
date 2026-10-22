@@ -17,7 +17,7 @@ describe('roles', () => {
     await truncateAll(db);
     admin = await createUser(db, { role: 'admin' }); adminToken = (await login(app, admin.email, admin.password)).accessToken;
   });
-  const post = (payload: unknown, token = adminToken) => app.inject({ method: 'POST', url: '/api/v1/roles', headers: bearer(token), payload });
+  const post = (payload: object, token = adminToken) => app.inject({ method: 'POST', url: '/api/v1/roles', headers: bearer(token), payload });
 
   it('lists the six system roles with user counts for any signed-in user', async () => {
     const emp = await createUser(db); const token = (await login(app, emp.email, emp.password)).accessToken;

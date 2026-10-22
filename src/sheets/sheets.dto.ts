@@ -13,9 +13,10 @@ const entryBase = z.object({
   workItem: z.string().min(1).max(120), workItemUrl: z.string().url().max(500).refine((u) => /^https?:\/\//i.test(u), 'Must be an http(s) URL').nullable().optional(),
   description: z.string().min(10).max(1000), requestedById: zUuid.nullable().optional(),
 });
+// An end at or before the start is on the next day, so only an equal start and end is rejected here.
 const timeOrder = (v: { startTime: string; endTime: string }) => hoursBetween(v.startTime, v.endTime) > 0;
 
-export class CreateEntryDto extends createZodDto(entryBase.refine(timeOrder, { message: 'End time must be after start time on the same day', path: ['endTime'] })) {}
+export class CreateEntryDto extends createZodDto(entryBase.refine(timeOrder, { message: 'End time must differ from start time', path: ['endTime'] })) {}
 export class UpdateEntryDto extends createZodDto(entryBase.partial()) {}
 export class ForPeriodDto extends createZodDto(z.object({ period: zPeriod })) {}
 export class ListSheetsQueryDto extends createZodDto(zPaginationQuery.extend({

@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import { DrizzleService } from '@/database/drizzle.service';
 import { attachments, sheetEntries, sheets, users } from '@/database/schema';
 import { AuthUser } from '@/common/auth/auth-user';
@@ -32,11 +32,19 @@ export class AttachmentsService {
     const sniffed = MAGIC.find(([, sig]) => file.buffer.subarray(0, sig.length).equals(sig))?.[0];
     if (!ext || sniffed !== file.mimetype) throw new DomainError('ATTACHMENT_TYPE', 'Only PNG, JPEG and PDF files are allowed', 400);
     const key = await this.storage.save(file.buffer, ext);
-    return this.drizzle.db.transaction(async (tx) => {
-      const [a] = await tx.insert(attachments).values({ ownerId: actor.id, storageKey: key, originalName: file.filename.slice(0, 200), mimeType: file.mimetype, sizeBytes: file.buffer.length }).returning();
-      await tx.update(sheetEntries).set({ attachmentId: a.id, updatedAt: new Date() }).where(eq(sheetEntries.id, entryId));
-      return { id: a.id, originalName: a.originalName, mimeType: a.mimeType, sizeBytes: a.sizeBytes };
-    });
+    try {
+      return await this.drizzle.db.transaction(async (tx) => {
+        const [a] = await tx.insert(attachments).values({ ownerId: actor.id, storageKey: key, originalName: file.filename.slice(0, 200), mimeType: file.mimetype, sizeBytes: file.buffer.length }).returning();
+        // Claim the entry atomically: a concurrent upload that already attached a file loses here and rolls back.
+        const claimed = await tx.update(sheetEntries).set({ attachmentId: a.id, updatedAt: new Date() })
+          .where(and(eq(sheetEntries.id, entryId), isNull(sheetEntries.attachmentId))).returning({ id: sheetEntries.id });
+        if (claimed.length === 0) throw new DomainError('ATTACHMENT_EXISTS', 'Entry already has an attachment', 409);
+        return { id: a.id, originalName: a.originalName, mimeType: a.mimeType, sizeBytes: a.sizeBytes };
+      });
+    } catch (err) {
+      await this.storage.remove(key);
+      throw err;
+    }
   }
 
   async detach(actor: AuthUser, sheetId: string, entryId: string): Promise<void> {

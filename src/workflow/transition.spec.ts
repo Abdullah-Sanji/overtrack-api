@@ -37,21 +37,25 @@ describe('submit', () => {
     const r = transition(sheet({ status: 'rejected', round: 1, submittedAt: NOW }), [], emp, { type: 'submit', chain }, NOW);
     expect(r.patch.round).toBe(2); expect(r.insertSteps[0].round).toBe(2);
   });
-  it('skips steps whose primary approver is the owner; backup-self is ignored', () => {
+  it('hands a step to its backup when the primary approver is the owner', () => {
     const r = transition(sheet({ employeeId: 'tl' }), [], tl, { type: 'submit', chain }, NOW);
-    expect(r.insertSteps.map((s) => s.status)).toEqual(['skipped', 'pending', 'pending']);
-    expect(r.insertSteps[0].comment).toBe('self');
-    expect(r.patch.currentStepPosition).toBe(2);
+    expect(r.insertSteps.map((s) => s.status)).toEqual(['pending', 'pending', 'pending']);
+    expect(r.insertSteps[0]).toMatchObject({ approverId: 'dm', backupApproverId: null, comment: 'backup for self' });
+    expect(r.patch.currentStepPosition).toBe(1);
     expect(r.events[0].payload.approverIds).toEqual(['dm']);
+  });
+  it('skips a step whose only approvers are the owner when another step remains', () => {
     const r2 = transition(sheet({ employeeId: 'dm' }), [], dm, { type: 'submit', chain }, NOW);
     expect(r2.insertSteps.map((s) => s.status)).toEqual(['pending', 'skipped', 'pending']);
+    expect(r2.insertSteps[1].comment).toBe('self');
     expect(r2.patch.currentStepPosition).toBe(1);
     expect(r2.events[0].payload.approverIds).toEqual(['tl']);
   });
-  it('auto-approves when every step is skipped', () => {
-    const r = transition(sheet({ employeeId: 'cto' }), [], cto, { type: 'submit', chain: [{ position: 1, label: 'CTO', approverId: 'cto', backupApproverId: null }] }, NOW);
-    expect(r.patch).toMatchObject({ status: 'approved', approvedAt: NOW, currentStepPosition: null });
-    expect(r.events.map((e) => e.name)).toEqual(['sheet.submitted', 'sheet.approved']);
+  it('refuses to submit when nobody but the owner could approve', () => {
+    const only = [{ position: 1, label: 'CTO', approverId: 'cto', backupApproverId: null }];
+    expect(code(() => transition(sheet({ employeeId: 'cto' }), [], cto, { type: 'submit', chain: only }, NOW))).toBe('CHAIN_SELF_ONLY');
+    const backupSelf = [{ position: 1, label: 'CTO', approverId: 'cto', backupApproverId: 'cto' }];
+    expect(code(() => transition(sheet({ employeeId: 'cto' }), [], cto, { type: 'submit', chain: backupSelf }, NOW))).toBe('CHAIN_SELF_ONLY');
   });
 });
 

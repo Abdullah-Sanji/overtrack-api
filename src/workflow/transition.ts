@@ -48,19 +48,20 @@ function submit(sheet: TSheet, actor: Actor, chain: ChainStepInput[], now: Date)
   if (chain.length === 0) throw new DomainError('CHAIN_EMPTY', 'This team has no approval chain configured', 409);
   const r = base();
   const round = sheet.submittedAt ? sheet.round + 1 : sheet.round;
+  // Nobody approves their own sheet. A step whose primary approver is the owner goes to its backup;
+  // with no usable backup it is skipped. If that leaves no step at all, the submission fails rather
+  // than auto-approving pay-relevant hours with no review.
   r.insertSteps = chain.map((c) => {
-    const self = c.approverId === sheet.employeeId;
-    return { position: c.position, label: c.label, approverId: c.approverId, backupApproverId: c.backupApproverId, status: self ? 'skipped' : 'pending', round, comment: self ? 'self' : null };
+    const base = { position: c.position, label: c.label, round };
+    if (c.approverId !== sheet.employeeId) return { ...base, approverId: c.approverId, backupApproverId: c.backupApproverId, status: 'pending' as const, comment: null };
+    if (c.backupApproverId && c.backupApproverId !== sheet.employeeId) return { ...base, approverId: c.backupApproverId, backupApproverId: null, status: 'pending' as const, comment: 'backup for self' };
+    return { ...base, approverId: c.approverId, backupApproverId: c.backupApproverId, status: 'skipped' as const, comment: 'self' };
   });
   const first = r.insertSteps.find((s) => s.status === 'pending');
-  r.patch = { status: 'submitted', round, currentStepPosition: first?.position ?? null, submittedAt: now, rejectedAt: null, rejectionReason: null };
+  if (!first) throw new DomainError('CHAIN_SELF_ONLY', 'You are the only approver in your team\'s chain; ask an admin to add another approver', 409);
+  r.patch = { status: 'submitted', round, currentStepPosition: first.position, submittedAt: now, rejectedAt: null, rejectionReason: null };
   r.auditAction = 'sheet.submitted';
-  r.events.push(ev('sheet.submitted', sheet, actor, first ? approversOf(first, sheet.employeeId) : []));
-  if (!first) {
-    r.patch = { ...r.patch, status: 'approved', approvedAt: now, currentStepPosition: null };
-    r.auditAction = 'sheet.approved';
-    r.events.push(ev('sheet.approved', sheet, actor, []));
-  }
+  r.events.push(ev('sheet.submitted', sheet, actor, approversOf(first, sheet.employeeId)));
   return r;
 }
 

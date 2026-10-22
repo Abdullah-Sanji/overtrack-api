@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
-import { and, eq, gt, lt, ne } from 'drizzle-orm';
+import { and, eq, gte, lte, ne } from 'drizzle-orm';
 import { formatInTimeZone } from 'date-fns-tz';
+import { addDays as addDaysToDate, format } from 'date-fns';
 import { DrizzleService, DbOrTx, Tx } from '@/database/drizzle.service';
 import { sheetEntries, users } from '@/database/schema';
 import { AuthUser } from '@/common/auth/auth-user';
@@ -8,17 +9,20 @@ import { DomainError, forbidden, notFound } from '@/common/errors/domain-error';
 import { OvertimeTypesService } from '@/overtime-types/overtime-types.service';
 import { SheetsService } from './sheets.service';
 import { CreateEntryDto, UpdateEntryDto } from './sheets.dto';
-import { hoursBetween, isQuarterStep, weighted } from './hours';
+import { entryInterval, hoursBetween, intervalsOverlap, isQuarterStep, weighted } from './hours';
 
 const EDITABLE = new Set(['draft', 'rejected']);
+const addDays = (date: string, n: number) => format(addDaysToDate(new Date(`${date}T00:00:00`), n), 'yyyy-MM-dd');
 
 @Injectable()
 export class EntriesService {
   constructor(private readonly drizzle: DrizzleService, private readonly sheets: SheetsService, private readonly types: OvertimeTypesService) {}
 
-  private assertHoursRange(hours: number) {
-    const msg = 'Hours must be between 0.25 and 16 in 0.25 steps';
-    if (hours < 0.25 || hours > 16 || !isQuarterStep(hours)) throw new DomainError('VALIDATION_FAILED', msg, 400, [{ path: 'hours', message: msg }]);
+  private assertHoursRange(hours: number, start: string, end: string) {
+    const fail = (msg: string) => new DomainError('VALIDATION_FAILED', msg, 400, [{ path: 'hours', message: msg }]);
+    if (hours < 0.25 || hours > 16 || !isQuarterStep(hours)) throw fail('Hours must be between 0.25 and 16 in 0.25 steps');
+    // hours drive pay, so a claimed figure can be less than the span (breaks) but never more
+    if (hours > hoursBetween(start, end)) throw fail('Hours cannot exceed the time between start and end');
   }
 
   private async editableSheet(tx: Tx, actor: AuthUser, sheetId: string) {
@@ -36,11 +40,15 @@ export class EntriesService {
     if (date > today) throw new DomainError('ENTRY_IN_FUTURE', 'Date cannot be in the future', 400);
   }
 
+  /** Entries may cross midnight, so compare absolute intervals against the neighbouring dates of this sheet rather than same-date times. */
   private async assertNoOverlap(tx: DbOrTx, sheetId: string, date: string, start: string, end: string, excludeId?: string) {
-    const conds = [eq(sheetEntries.sheetId, sheetId), eq(sheetEntries.date, date), lt(sheetEntries.startTime, end), gt(sheetEntries.endTime, start)];
+    const mine = entryInterval(date, start, end);
+    const conds = [eq(sheetEntries.sheetId, sheetId), gte(sheetEntries.date, addDays(date, -1)), lte(sheetEntries.date, addDays(date, 1))];
     if (excludeId) conds.push(ne(sheetEntries.id, excludeId));
-    const [clash] = await tx.select({ id: sheetEntries.id }).from(sheetEntries).where(and(...conds)).limit(1);
-    if (clash) throw new DomainError('ENTRY_OVERLAP', 'Overlaps an existing entry on the same date', 409);
+    const rows = await tx.select({ date: sheetEntries.date, startTime: sheetEntries.startTime, endTime: sheetEntries.endTime }).from(sheetEntries).where(and(...conds));
+    if (rows.some((r) => intervalsOverlap(mine, entryInterval(r.date, r.startTime.slice(0, 5), r.endTime.slice(0, 5))))) {
+      throw new DomainError('ENTRY_OVERLAP', 'Overlaps an existing entry', 409);
+    }
   }
 
   async create(actor: AuthUser, sheetId: string, dto: CreateEntryDto) {
@@ -50,7 +58,7 @@ export class EntriesService {
       await this.assertNoOverlap(tx, sheetId, dto.date, dto.startTime, dto.endTime);
       const type = await this.types.findActiveById(dto.overtimeTypeId, tx);
       const hours = dto.hours ?? hoursBetween(dto.startTime, dto.endTime);
-      this.assertHoursRange(hours);
+      this.assertHoursRange(hours, dto.startTime, dto.endTime);
       const [row] = await tx.insert(sheetEntries).values({
         sheetId, date: dto.date, startTime: dto.startTime, endTime: dto.endTime, hours: hours.toFixed(2), overtimeTypeId: type.id,
         multiplierSnapshot: type.multiplier.toFixed(2), weightedHours: weighted(hours, type.multiplier).toFixed(2),
@@ -68,13 +76,13 @@ export class EntriesService {
       const [cur] = await tx.select().from(sheetEntries).where(and(eq(sheetEntries.id, entryId), eq(sheetEntries.sheetId, sheetId)));
       if (!cur) throw notFound('Entry');
       const date = dto.date ?? cur.date; const start = dto.startTime ?? cur.startTime.slice(0, 5); const end = dto.endTime ?? cur.endTime.slice(0, 5);
-      if (hoursBetween(start, end) <= 0) throw new DomainError('VALIDATION_FAILED', 'End time must be after start time', 400, [{ path: 'endTime', message: 'End time must be after start time' }]);
+      if (hoursBetween(start, end) <= 0) throw new DomainError('VALIDATION_FAILED', 'End time must differ from start time', 400, [{ path: 'endTime', message: 'End time must differ from start time' }]);
       await this.validateDate(tx, sheet.employeeId, sheet.period, date);
       await this.assertNoOverlap(tx, sheetId, date, start, end, entryId);
       const type = dto.overtimeTypeId ? await this.types.findActiveById(dto.overtimeTypeId, tx) : { id: cur.overtimeTypeId, multiplier: Number(cur.multiplierSnapshot) };
       const timesChanged = dto.startTime !== undefined || dto.endTime !== undefined;
       const hours = dto.hours ?? (timesChanged ? hoursBetween(start, end) : Number(cur.hours));
-      this.assertHoursRange(hours);
+      this.assertHoursRange(hours, start, end);
       await tx.update(sheetEntries).set({
         date, startTime: start, endTime: end, hours: hours.toFixed(2), overtimeTypeId: type.id, multiplierSnapshot: type.multiplier.toFixed(2),
         weightedHours: weighted(hours, type.multiplier).toFixed(2),

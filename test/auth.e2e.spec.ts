@@ -2,10 +2,10 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { createTestApp, login, bearer } from './helpers/app';
 import { truncateAll } from './helpers/db';
-import { createUser } from './helpers/factories';
+import { createUser, systemRoleId } from './helpers/factories';
 import { eq } from 'drizzle-orm';
 import { DrizzleService } from '@/database/drizzle.service';
-import { refreshTokens } from '@/database/schema';
+import { refreshTokens, users } from '@/database/schema';
 
 describe('auth', () => {
   let app: NestFastifyApplication;
@@ -52,13 +52,34 @@ describe('auth', () => {
     const first = await app.inject({ method: 'POST', url: '/api/v1/auth/refresh', headers: { cookie } });
     expect(first.statusCode).toBe(200);
     const second = res2cookie(first);
-    // replay the original cookie
+    // age the rotation past the multi-tab grace window, then replay the original cookie
+    await db.update(refreshTokens).set({ revokedAt: new Date(Date.now() - 60_000) }).where(eq(refreshTokens.userId, u.id));
     const replay = await app.inject({ method: 'POST', url: '/api/v1/auth/refresh', headers: { cookie } });
     expect(replay.statusCode).toBe(401);
     expect(replay.json().code).toBe('TOKEN_REUSED');
     // the rotated token is now dead too
     const after = await app.inject({ method: 'POST', url: '/api/v1/auth/refresh', headers: { cookie: second } });
     expect(after.statusCode).toBe(401);
+  });
+
+  it('lets a second tab refresh with the same cookie within the grace window', async () => {
+    const u = await createUser(db);
+    const { cookie } = await login(app, u.email, u.password);
+    const tabA = await app.inject({ method: 'POST', url: '/api/v1/auth/refresh', headers: { cookie } });
+    const tabB = await app.inject({ method: 'POST', url: '/api/v1/auth/refresh', headers: { cookie } });
+    expect(tabA.statusCode).toBe(200);
+    expect(tabB.statusCode).toBe(200);
+    // both tabs hold live tokens afterwards
+    expect((await app.inject({ method: 'POST', url: '/api/v1/auth/refresh', headers: { cookie: res2cookie(tabA) } })).statusCode).toBe(200);
+    expect((await app.inject({ method: 'POST', url: '/api/v1/auth/refresh', headers: { cookie: res2cookie(tabB) } })).statusCode).toBe(200);
+  });
+
+  it('gives no grace to a token revoked by logout', async () => {
+    const u = await createUser(db);
+    const { cookie, accessToken } = await login(app, u.email, u.password);
+    await app.inject({ method: 'POST', url: '/api/v1/auth/logout', headers: { cookie, ...bearer(accessToken) } });
+    const res = await app.inject({ method: 'POST', url: '/api/v1/auth/refresh', headers: { cookie } });
+    expect(res.statusCode).toBe(401);
   });
 
   it('rotation keeps the family\'s original expiry', async () => {
@@ -86,11 +107,40 @@ describe('auth', () => {
     expect((await attempt()).statusCode).toBe(429);
   });
 
+  it('does not rate-limit refresh and logout, which every tab calls on load', async () => {
+    const u = await createUser(db);
+    let { cookie } = await login(app, u.email, u.password);
+    for (let i = 0; i < 12; i++) {
+      const r = await app.inject({ method: 'POST', url: '/api/v1/auth/refresh', remoteAddress: '10.0.0.2', headers: { cookie } });
+      expect(r.statusCode).toBe(200);
+      cookie = res2cookie(r);
+    }
+    const out = await app.inject({ method: 'POST', url: '/api/v1/auth/logout', remoteAddress: '10.0.0.2', headers: { cookie } });
+    expect(out.statusCode).toBe(204);
+  });
+
   it('enforces @Levels on admin routes', async () => {
     const u = await createUser(db, { role: 'employee' });
     const { accessToken } = await login(app, u.email, u.password);
     const res = await app.inject({ method: 'GET', url: '/api/v1/users', headers: bearer(accessToken) });
     expect(res.statusCode).toBe(403);
+  });
+
+  it('cuts off a deactivated user before the access token expires', async () => {
+    const u = await createUser(db);
+    const { accessToken } = await login(app, u.email, u.password);
+    await db.update(users).set({ isActive: false }).where(eq(users.id, u.id));
+    const res = await app.inject({ method: 'GET', url: '/api/v1/me', headers: bearer(accessToken) });
+    expect(res.statusCode).toBe(401);
+    expect(res.json().code).toBe('USER_INACTIVE');
+  });
+
+  it('applies a role change on the next request without a new token', async () => {
+    const u = await createUser(db, { role: 'employee' });
+    const { accessToken } = await login(app, u.email, u.password);
+    expect((await app.inject({ method: 'GET', url: '/api/v1/users', headers: bearer(accessToken) })).statusCode).toBe(403);
+    await db.update(users).set({ roleId: await systemRoleId(db, 'admin') }).where(eq(users.id, u.id));
+    expect((await app.inject({ method: 'GET', url: '/api/v1/users', headers: bearer(accessToken) })).statusCode).toBe(200);
   });
 });
 

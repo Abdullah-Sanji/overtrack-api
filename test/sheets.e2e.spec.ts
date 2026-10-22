@@ -55,14 +55,45 @@ describe('sheets and entries', () => {
     expect(ok.statusCode).toBe(201);
   });
 
-  it('rejects end before start, crossing midnight, and bad quarter steps', async () => {
+  it('rejects a zero-length span, a span over 16 hours, and bad quarter steps', async () => {
     const s = await sheetFor();
-    const r1 = await app.inject({ method: 'POST', url: `/api/v1/sheets/${s.id}/entries`, headers: bearer(token), payload: entry({ startTime: '20:00', endTime: '18:00' }) });
+    const r1 = await app.inject({ method: 'POST', url: `/api/v1/sheets/${s.id}/entries`, headers: bearer(token), payload: entry({ startTime: '18:00', endTime: '18:00' }) });
     expect(r1.json().code).toBe('VALIDATION_FAILED');
-    const r2 = await app.inject({ method: 'POST', url: `/api/v1/sheets/${s.id}/entries`, headers: bearer(token), payload: entry({ startTime: '23:00', endTime: '01:00' }) });
+    // 20:00 to 18:00 next day is 22 hours
+    const r2 = await app.inject({ method: 'POST', url: `/api/v1/sheets/${s.id}/entries`, headers: bearer(token), payload: entry({ startTime: '20:00', endTime: '18:00' }) });
     expect(r2.json().code).toBe('VALIDATION_FAILED');
     const r3 = await app.inject({ method: 'POST', url: `/api/v1/sheets/${s.id}/entries`, headers: bearer(token), payload: entry({ hours: 1.3 }) });
     expect(r3.json().code).toBe('VALIDATION_FAILED');
+  });
+
+  it('records an overnight entry whose end time is on the next day', async () => {
+    const s = await sheetFor();
+    const r = await app.inject({ method: 'POST', url: `/api/v1/sheets/${s.id}/entries`, headers: bearer(token), payload: entry({ startTime: '22:00', endTime: '02:00' }) });
+    expect(r.statusCode).toBe(201);
+    expect(r.json().data).toMatchObject({ hours: 4, weightedHours: 6 });
+  });
+
+  it('rejects hours larger than the time span', async () => {
+    const s = await sheetFor();
+    const r = await app.inject({ method: 'POST', url: `/api/v1/sheets/${s.id}/entries`, headers: bearer(token), payload: entry({ startTime: '09:00', endTime: '10:00', hours: 16 }) });
+    expect(r.statusCode).toBe(400); expect(r.json().code).toBe('VALIDATION_FAILED');
+    expect(JSON.stringify(r.json())).toContain('hours');
+    const ok = await app.inject({ method: 'POST', url: `/api/v1/sheets/${s.id}/entries`, headers: bearer(token), payload: entry({ startTime: '09:00', endTime: '10:00', hours: 0.75 }) });
+    expect(ok.statusCode).toBe(201);
+    const u = await app.inject({ method: 'PATCH', url: `/api/v1/sheets/${s.id}/entries/${ok.json().data.id}`, headers: bearer(token), payload: { hours: 1.25 } });
+    expect(u.statusCode).toBe(400); expect(u.json().code).toBe('VALIDATION_FAILED');
+  });
+
+  it.skipIf(today.endsWith('-01'))('detects an overnight entry overlapping the next morning', async () => {
+    const s = await sheetFor();
+    const d = new Date(`${today}T00:00:00Z`); d.setUTCDate(d.getUTCDate() - 1);
+    const yesterday = d.toISOString().slice(0, 10);
+    const night = await app.inject({ method: 'POST', url: `/api/v1/sheets/${s.id}/entries`, headers: bearer(token), payload: entry({ date: yesterday, startTime: '22:00', endTime: '02:00' }) });
+    expect(night.statusCode).toBe(201);
+    const morning = await app.inject({ method: 'POST', url: `/api/v1/sheets/${s.id}/entries`, headers: bearer(token), payload: entry({ date: today, startTime: '01:00', endTime: '03:00' }) });
+    expect(morning.statusCode).toBe(409); expect(morning.json().code).toBe('ENTRY_OVERLAP');
+    const later = await app.inject({ method: 'POST', url: `/api/v1/sheets/${s.id}/entries`, headers: bearer(token), payload: entry({ date: today, startTime: '02:00', endTime: '03:00' }) });
+    expect(later.statusCode).toBe(201);
   });
 
   it('rejects overlapping entries on the same date', async () => {

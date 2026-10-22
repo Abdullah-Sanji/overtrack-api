@@ -35,12 +35,11 @@ describe('role levels', () => {
     expect((await app.inject({ method: 'GET', url: '/api/v1/users', headers: bearer(t2) })).statusCode).toBe(403);
   });
 
-  it('rejects a pre-upgrade token that carries role but no level', async () => {
-    const u = await createUser(db, { role: 'admin' });
-    const legacy = await app.get(JwtService).signAsync({ sub: u.id, role: 'admin', teamId: null }, { expiresIn: 900 });
-    const res = await app.inject({ method: 'GET', url: '/api/v1/me', headers: bearer(legacy) });
-    expect(res.statusCode).toBe(401);
-    expect(res.json().code).toBe('TOKEN_EXPIRED');
+  it('ignores role claims in the token and reads the role from the database', async () => {
+    const u = await createUser(db, { role: 'employee' });
+    const forged = await app.get(JwtService).signAsync({ sub: u.id, role: 'admin', level: 'admin', teamId: null }, { expiresIn: 900 });
+    const res = await app.inject({ method: 'GET', url: '/api/v1/users', headers: bearer(forged) });
+    expect(res.statusCode).toBe(403);
   });
 
   it('/me returns the role object', async () => {
