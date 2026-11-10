@@ -4,7 +4,8 @@ import { and, asc, count, desc, eq, exists, inArray, or, SQL, sum } from 'drizzl
 import { DrizzleService, DbOrTx, Tx } from '@/database/drizzle.service';
 import { attachments, overtimeTypes, sheetApprovalSteps, sheetEntries, sheets, teams, users } from '@/database/schema';
 import { AuthUser } from '@/common/auth/auth-user';
-import { forbidden, notFound } from '@/common/errors/domain-error';
+import { formatInTimeZone } from 'date-fns-tz';
+import { DomainError, forbidden, notFound } from '@/common/errors/domain-error';
 import { paged, parsePagination } from '@/common/pagination';
 import { dateToPeriod, periodToDate } from '@/common/zod';
 import { ListSheetsQueryDto } from './sheets.dto';
@@ -38,9 +39,12 @@ export class SheetsService {
     };
   }
 
+  /** Any month up to the employee's current one can be opened, so overtime can be recorded after the fact; future months cannot. */
   async getOrCreateForPeriod(employeeId: string, period: string): Promise<SheetSummary> {
     const db = this.drizzle.db;
-    const [emp] = await db.select({ teamId: users.teamId }).from(users).where(eq(users.id, employeeId));
+    const [emp] = await db.select({ teamId: users.teamId, tz: users.timezone }).from(users).where(eq(users.id, employeeId));
+    const current = formatInTimeZone(new Date(), emp?.tz ?? 'UTC', 'yyyy-MM');
+    if (period > current) throw new DomainError('PERIOD_IN_FUTURE', 'A sheet cannot be opened for a future month', 400);
     await db.insert(sheets).values({ employeeId, teamId: emp?.teamId ?? null, period: periodToDate(period) }).onConflictDoNothing();
     const [r] = await this.summarySelect(db).where(and(eq(sheets.employeeId, employeeId), eq(sheets.period, periodToDate(period))));
     return SheetsService.toSummary(r);

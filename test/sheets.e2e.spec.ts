@@ -36,6 +36,22 @@ describe('sheets and entries', () => {
     expect(a.id).toBe(b.id); expect(a.status).toBe('draft');
   });
 
+  it('opens a sheet for a past month and accepts entries dated in that month', async () => {
+    const s = await sheetFor('2026-01');
+    expect(s.status).toBe('draft');
+    const r = await app.inject({ method: 'POST', url: `/api/v1/sheets/${s.id}/entries`, headers: bearer(token), payload: entry({ date: '2026-01-15' }) });
+    expect(r.statusCode).toBe(201);
+    expect(r.json().data).toMatchObject({ date: '2026-01-15', hours: 2.5 });
+    const early = await app.inject({ method: 'POST', url: `/api/v1/sheets/${s.id}/entries`, headers: bearer(token), payload: entry({ date: '2026-01-02', startTime: '08:00', endTime: '09:00' }) });
+    expect(early.statusCode).toBe(201);
+  });
+
+  it('refuses to open a sheet for a future month', async () => {
+    const next = new Date(`${today}T00:00:00Z`); next.setUTCDate(1); next.setUTCMonth(next.getUTCMonth() + 1);
+    const res = await app.inject({ method: 'POST', url: '/api/v1/sheets/for-period', headers: bearer(token), payload: { period: next.toISOString().slice(0, 7) } });
+    expect(res.statusCode).toBe(400); expect(res.json().code).toBe('PERIOD_IN_FUTURE');
+  });
+
   it('adds an entry, derives hours and weighted hours, recomputes totals', async () => {
     const s = await sheetFor();
     const res = await app.inject({ method: 'POST', url: `/api/v1/sheets/${s.id}/entries`, headers: bearer(token), payload: entry() });
